@@ -1,0 +1,542 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,ital,wght@9..144,0,300;9..144,0,400;9..144,1,300;9..144,1,400&display=swap');
+  @import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-page: #040506;
+    --bg-section: #06080A;
+    --bg-elevated: #0A0D10;
+    --bg-card: rgba(9,12,15,0.82);
+    --accent: #0356c5;
+    --accent-hover: #0B63D9;
+    --accent-glow: rgba(3,86,197,0.28);
+    --accent-dim: rgba(3,86,197,0.10);
+    --accent-border: rgba(3,86,197,0.32);
+    --text-primary: #F4F5F0;
+    --text-secondary: #8D9AA3;
+    --text-muted: #4A5568;
+    --text-code: #C9D3D0;
+    --border-subtle: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --status-success: #22C55E;
+    --status-warning: #F59E0B;
+    --status-error: #EF4444;
+  }
+
+  body { background: var(--bg-page); color: var(--text-primary); font-family: 'Satoshi', sans-serif; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+  /* NAV */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(4,5,6,0.85);
+    border-bottom: 1px solid var(--border-subtle);
+    backdrop-filter: blur(20px);
+    padding: 0 40px; height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-logo { font-family: 'Fraunces', Georgia, serif; font-size: 20px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; }
+  .nav-logo em { font-style: italic; color: var(--accent); }
+  .nav-links { display: flex; gap: 4px; align-items: center; }
+  .nav-link { font-size: 13px; font-weight: 500; color: var(--text-secondary); padding: 6px 12px; border-radius: 8px; cursor: pointer; transition: color 0.15s, background 0.15s; }
+  .nav-link:hover { color: var(--text-primary); background: var(--border-subtle); }
+  .nav-link.active { color: var(--accent); }
+  .btn-nav { font-size: 12px; font-weight: 700; color: var(--text-primary); background: var(--accent); border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; transition: background 0.18s; }
+  .btn-nav:hover { background: var(--accent-hover); }
+
+  /* HERO */
+  .hero {
+    background: var(--bg-page);
+    position: relative; overflow: hidden;
+    padding: 100px 40px 80px;
+    display: grid; grid-template-columns: 1fr 420px; gap: 60px; align-items: center;
+  }
+  .hero-grid-bg {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+    background-size: 80px 80px;
+  }
+  .hero-radial {
+    position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 70% 60% at 50% 30%, rgba(3,86,197,0.10) 0%, transparent 70%);
+  }
+  .hero-content { position: relative; z-index: 2; }
+
+  .eyebrow {
+    font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
+    margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+  }
+  .eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .hero-h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: clamp(42px, 5.5vw, 72px);
+    font-weight: 400; line-height: 0.96; letter-spacing: -0.035em;
+    color: var(--text-primary); margin-bottom: 28px;
+  }
+  .hero-h1 em { font-style: italic; color: var(--accent); }
+
+  .hero-body { font-size: 16px; font-weight: 300; line-height: 1.7; color: var(--text-secondary); max-width: 500px; margin-bottom: 36px; }
+
+  .cta-group { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .btn-primary { font-family: 'Satoshi', sans-serif; font-size: 13px; font-weight: 700; color: #F4F5F0; background: var(--accent); border: none; border-radius: 10px; padding: 13px 24px; cursor: pointer; transition: background 0.18s, box-shadow 0.18s; }
+  .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 28px rgba(3,86,197,0.4); }
+  .btn-ghost { font-family: 'Satoshi', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-primary); background: transparent; border: 1px solid var(--border-strong); border-radius: 10px; padding: 12px 24px; cursor: pointer; transition: border-color 0.18s, color 0.18s; }
+  .btn-ghost:hover { border-color: var(--accent-border); color: var(--accent); }
+
+  /* PROOF CARD */
+  .proof-card {
+    position: relative; z-index: 2;
+    background: rgba(9,12,15,0.80); border: 1px solid rgba(3,86,197,0.30);
+    border-radius: 18px; padding: 24px; backdrop-filter: blur(18px);
+    box-shadow: 0 0 60px rgba(3,86,197,0.12), 0 24px 60px rgba(0,0,0,0.5);
+    animation: float 6s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+  .proof-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .proof-title { font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+  .proof-status { display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--status-success); }
+  .proof-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-success); animation: pulse-dot 2s ease-in-out infinite; }
+
+  .proof-amount { font-family: 'Fraunces', Georgia, serif; font-size: 40px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.03em; line-height: 1; margin-bottom: 4px; }
+  .proof-asset { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 20px; }
+
+  .proof-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+  .proof-row:last-of-type { border-bottom: none; }
+  .proof-label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .proof-value { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-code); }
+  .proof-value.blue { color: var(--accent); }
+  .proof-value.green { color: var(--status-success); }
+
+  .proof-route { display: flex; align-items: center; gap: 8px; background: var(--accent-dim); border: 1px solid var(--accent-border); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
+  .proof-chain { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+  .proof-arrow { color: var(--text-muted); font-size: 14px; }
+  .proof-cctp { font-family: 'Courier New', monospace; font-size: 10px; color: var(--text-muted); margin-left: auto; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* STATS STRIP */
+  .stats-strip {
+    background: var(--bg-section); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);
+    padding: 32px 40px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+  }
+  .stat-item { text-align: center; border-right: 1px solid var(--border-subtle); padding: 0 24px; }
+  .stat-item:last-child { border-right: none; }
+  .stat-number { font-family: 'Fraunces', Georgia, serif; font-size: 36px; font-weight: 400; letter-spacing: -0.03em; color: var(--text-primary); }
+  .stat-number em { font-style: italic; color: var(--accent); }
+  .stat-label { font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); margin-top: 4px; }
+
+  /* HOW IT WORKS */
+  .section { padding: 96px 40px; }
+  .section.alt { background: var(--bg-section); }
+  .section-inner { max-width: 1100px; margin: 0 auto; }
+  .section-eyebrow { font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; }
+  .section-h2 { font-family: 'Fraunces', Georgia, serif; font-size: clamp(32px, 4vw, 52px); font-weight: 400; line-height: 1.04; letter-spacing: -0.03em; color: var(--text-primary); margin-bottom: 16px; }
+  .section-h2 em { font-style: italic; color: var(--accent); }
+  .section-copy { font-size: 16px; font-weight: 300; line-height: 1.7; color: var(--text-secondary); max-width: 520px; margin-bottom: 56px; }
+
+  /* STEPS */
+  .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .step-card {
+    background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 16px;
+    padding: 24px; transition: border-color 0.2s, box-shadow 0.2s; cursor: default;
+  }
+  .step-card:hover { border-color: var(--accent-border); box-shadow: 0 0 32px rgba(3,86,197,0.08); }
+  .step-num { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .step-num-line { flex: 1; height: 1px; background: var(--accent-border); }
+  .step-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; line-height: 1.3; }
+  .step-desc { font-size: 13px; font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
+  .step-tag { display: inline-block; margin-top: 14px; font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 10px; border-radius: 6px; background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+
+  /* FEATURES 2-COL */
+  .features-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .feature-card { background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 28px; transition: border-color 0.2s; }
+  .feature-card:hover { border-color: var(--accent-border); }
+  .feature-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-dim); border: 1px solid var(--accent-border); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 18px; }
+  .feature-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+  .feature-desc { font-size: 13px; font-weight: 400; line-height: 1.65; color: var(--text-secondary); }
+
+  /* GAS CREDITS DEMO */
+  .gas-demo { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 28px; margin-top: 16px; }
+  .gas-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .gas-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .gas-count { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 500; color: var(--accent); }
+  .gas-track { height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+  .gas-fill { height: 100%; width: 90%; background: var(--accent); border-radius: 2px; box-shadow: 0 0 10px rgba(3,86,197,0.5); }
+  .gas-label { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+
+  /* RULE BADGES */
+  .rules-demo { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; }
+  .rule-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .rule-val { font-family: 'Courier New', monospace; font-size: 12px; font-weight: 500; color: var(--accent); }
+
+  /* AGENT MOCK */
+  .agent-mock { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 16px; overflow: hidden; }
+  .agent-header { padding: 14px 20px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.02); }
+  .agent-dots { display: flex; gap: 6px; }
+  .agent-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .agent-dot.r { background: rgba(239,68,68,0.6); }
+  .agent-dot.y { background: rgba(245,158,11,0.6); }
+  .agent-dot.g { background: rgba(34,197,94,0.5); }
+  .agent-label { font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); margin-left: 4px; }
+  .agent-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg-user { align-self: flex-end; background: var(--accent-dim); border: 1px solid var(--accent-border); border-radius: 12px 12px 0 12px; padding: 11px 15px; font-size: 13px; color: var(--text-primary); max-width: 80%; }
+  .msg-agent { align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border-subtle); border-left: 2px solid var(--accent); border-radius: 0 12px 12px 12px; padding: 14px 16px; font-size: 13px; line-height: 1.6; color: var(--text-primary); max-width: 92%; }
+  .msg-route { background: rgba(9,12,15,0.9); border: 1px solid var(--accent-border); border-radius: 8px; padding: 12px 14px; margin-top: 10px; font-family: 'Courier New', monospace; font-size: 11px; color: var(--text-code); line-height: 1.7; }
+  .msg-approve { display: inline-flex; margin-top: 12px; font-family: 'Satoshi', sans-serif; font-size: 12px; font-weight: 700; color: #F4F5F0; background: var(--accent); border: none; border-radius: 8px; padding: 9px 18px; cursor: pointer; transition: background 0.18s; }
+  .msg-approve:hover { background: var(--accent-hover); }
+
+  /* CTA SECTION */
+  .cta-section { background: var(--bg-section); border-top: 1px solid var(--border-subtle); padding: 96px 40px; text-align: center; }
+  .cta-inner { max-width: 580px; margin: 0 auto; }
+  .cta-h2 { font-family: 'Fraunces', Georgia, serif; font-size: clamp(32px, 4vw, 52px); font-weight: 400; line-height: 1.04; letter-spacing: -0.03em; color: var(--text-primary); margin-bottom: 16px; }
+  .cta-h2 em { font-style: italic; color: var(--accent); }
+  .cta-copy { font-size: 16px; font-weight: 300; line-height: 1.7; color: var(--text-secondary); margin-bottom: 36px; }
+  .cta-note { font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-top: 14px; }
+
+  /* FOOTER */
+  footer { background: var(--bg-page); border-top: 1px solid var(--border-subtle); padding: 48px 40px 36px; }
+  .footer-inner { max-width: 1100px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; }
+  .footer-logo { font-family: 'Fraunces', Georgia, serif; font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; }
+  .footer-logo em { font-style: italic; color: var(--accent); }
+  .footer-desc { font-size: 12px; font-weight: 300; color: var(--text-muted); margin-top: 8px; max-width: 240px; line-height: 1.6; }
+  .footer-links { display: flex; flex-direction: column; gap: 8px; }
+  .footer-link-label { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .footer-link { font-size: 13px; color: var(--text-muted); cursor: pointer; transition: color 0.15s; }
+  .footer-link:hover { color: var(--text-primary); }
+  .footer-bottom { border-top: 1px solid var(--border-subtle); padding-top: 24px; margin-top: 32px; display: flex; justify-content: space-between; align-items: center; }
+  .footer-copy { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .footer-chain { display: flex; align-items: center; gap: 8px; font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .footer-chain-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--status-success); }
+</style>
+
+<h2 class="sr-only">OmnisRouter — AI stablecoin payment agent landing page sample</h2>
+
+<div style="background: var(--bg-page); min-height: 100vh;">
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">Omnis<em>Router</em></div>
+    <div class="nav-links">
+      <span class="nav-link active">Dashboard</span>
+      <span class="nav-link">Rules</span>
+      <span class="nav-link">Payments</span>
+      <span class="nav-link">Docs</span>
+    </div>
+    <button class="btn-nav">Connect Wallet</button>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid-bg"></div>
+    <div class="hero-radial"></div>
+
+    <div class="hero-content">
+      <p class="eyebrow"><span class="eyebrow-dot"></span>Injective × Solana · CCTP Standard Transfer</p>
+      <h1 class="hero-h1">
+        Cross-chain payments<br>
+        that feel like<br>
+        <em>payments.</em>
+      </h1>
+      <p class="hero-body">
+        OmnisRouter turns "send 40 USDC to this Solana address" into a safe, rule-checked cross-chain transfer. The agent checks the route, validates your spending rules, handles gas logic, and asks for approval before a single token moves.
+      </p>
+      <div class="cta-group">
+        <button class="btn-primary">Start a Payment</button>
+        <button class="btn-ghost">Read the Docs</button>
+      </div>
+    </div>
+
+    <!-- FLOATING PROOF CARD -->
+    <div class="proof-card">
+      <div class="proof-header">
+        <span class="proof-title">Live Transfer</span>
+        <span class="proof-status"><span class="proof-dot"></span>Complete</span>
+      </div>
+      <div class="proof-amount">40.00</div>
+      <div class="proof-asset">USDC · Cross-chain</div>
+      <div class="proof-row">
+        <span class="proof-label">Recipient</span>
+        <span class="proof-value">9xQeWvG8...EP</span>
+      </div>
+      <div class="proof-row">
+        <span class="proof-label">Gas fee</span>
+        <span class="proof-value green">Sponsored ✓</span>
+      </div>
+      <div class="proof-row">
+        <span class="proof-label">Rule check</span>
+        <span class="proof-value blue">Passed · approved</span>
+      </div>
+      <div class="proof-row">
+        <span class="proof-label">CCTP attestation</span>
+        <span class="proof-value green">Confirmed</span>
+      </div>
+      <div class="proof-route">
+        <span class="proof-chain">Injective</span>
+        <span class="proof-arrow">→</span>
+        <span class="proof-chain">Solana</span>
+        <span class="proof-cctp">via CCTP</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <div class="stats-strip">
+    <div class="stat-item">
+      <div class="stat-number"><em>6</em> steps</div>
+      <div class="stat-label">From intent to receipt</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number"><em>20</em> credits</div>
+      <div class="stat-label">Sponsored gas per month</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-number">Zero<em>.</em></div>
+      <div class="stat-label">Blind autonomous spending</div>
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <section class="section">
+    <div class="section-inner">
+      <p class="section-eyebrow">How it works</p>
+      <h2 class="section-h2">Intent in. <em>Safe transfer</em> out.</h2>
+      <p class="section-copy">Every payment flows through a structured pipeline — intent parsing, route validation, rule enforcement, and human approval — before execution begins.</p>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">01 <div class="step-num-line"></div></div>
+          <div class="step-title">Intent parsing</div>
+          <div class="step-desc">Type what you want to do in plain language. The agent extracts amount, asset, source chain, destination chain, and recipient address into structured JSON.</div>
+          <span class="step-tag">AI layer</span>
+        </div>
+        <div class="step-card">
+          <div class="step-num">02 <div class="step-num-line"></div></div>
+          <div class="step-title">Route & rule check</div>
+          <div class="step-desc">The route checker confirms Injective → Solana CCTP support. The deterministic rule engine approves, denies, or flags the payment against your spending limits.</div>
+          <span class="step-tag">Rule engine</span>
+        </div>
+        <div class="step-card">
+          <div class="step-num">03 <div class="step-num-line"></div></div>
+          <div class="step-title">Gas credit logic</div>
+          <div class="step-desc">OmnisRouter checks your 20 monthly sponsored gas credits. If credits remain, gas is handled automatically. If exhausted, you choose fee deduction or top-up.</div>
+          <span class="step-tag">Gas layer</span>
+        </div>
+        <div class="step-card">
+          <div class="step-num">04 <div class="step-num-line"></div></div>
+          <div class="step-title">Human approval</div>
+          <div class="step-desc">You see the full payment summary — route, amount, fee, rule result — and approve before any transaction is submitted. No autonomous spending without your sign-off.</div>
+          <span class="step-tag">Trust gate</span>
+        </div>
+        <div class="step-card">
+          <div class="step-num">05 <div class="step-num-line"></div></div>
+          <div class="step-title">CCTP execution</div>
+          <div class="step-desc">Upon approval, USDC is burned on Injective, Circle produces the attestation, and the same amount is minted as native USDC to your recipient's Solana address.</div>
+          <span class="step-tag">CCTP rail</span>
+        </div>
+        <div class="step-card">
+          <div class="step-num">06 <div class="step-num-line"></div></div>
+          <div class="step-title">Receipt & audit log</div>
+          <div class="step-desc">Every step is logged — intent parsed, rules validated, approval recorded, attestation confirmed, minting complete. A full receipt with TX hashes is generated for your records.</div>
+          <span class="step-tag">Trust layer</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section alt">
+    <div class="section-inner">
+      <p class="section-eyebrow">Product features</p>
+      <h2 class="section-h2">Everything a payment <em>needs.</em></h2>
+      <p class="section-copy">OmnisRouter is built around five modules: intent parsing, route checking, spending rule enforcement, gas credit logic, and payment execution with a full audit log.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon"><i class="ti ti-shield-check" aria-hidden="true" style="color: var(--accent); font-size: 20px;"></i></div>
+          <div class="feature-title">Deterministic spending rules</div>
+          <div class="feature-desc">Set max transfer amounts, daily caps, approval thresholds, allowed destination chains, blocked addresses, and an emergency pause. Rules run in code — not AI guesswork.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i class="ti ti-zap" aria-hidden="true" style="color: var(--accent); font-size: 20px;"></i></div>
+          <div class="feature-title">Sponsored gas credits</div>
+          <div class="feature-desc">20 sponsored gas-credit transfers per month. When credits remain, transfers proceed without you sourcing INJ or SOL. When exhausted, choose fee deduction or top-up.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i class="ti ti-route" aria-hidden="true" style="color: var(--accent); font-size: 20px;"></i></div>
+          <div class="feature-title">CCTP route transparency</div>
+          <div class="feature-desc">Plain-English route explanation with a technical details dropdown. You always know the transfer path — Injective burn → Circle attestation → Solana mint — before approving.</div>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><i class="ti ti-receipt" aria-hidden="true" style="color: var(--accent); font-size: 20px;"></i></div>
+          <div class="feature-title">Full payment audit log</div>
+          <div class="feature-desc">Every step from intent parsed to minting confirmed is logged with timestamps and metadata. TX hashes link to explorers. Receipts show who paid the fee — always.</div>
+        </div>
+      </div>
+
+      <!-- GAS DEMO -->
+      <div style="margin-top: 16px;">
+        <div class="gas-demo">
+          <div class="gas-header">
+            <span class="gas-title">Sponsored gas credits</span>
+            <span class="gas-count">18 / 20 remaining</span>
+          </div>
+          <div class="gas-track"><div class="gas-fill"></div></div>
+          <div class="gas-label">Resets monthly · Current transfer: sponsored</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AGENT DEMO + RULES -->
+  <section class="section">
+    <div class="section-inner">
+      <p class="section-eyebrow">See it in action</p>
+      <h2 class="section-h2">The agent explains. <em>You approve.</em></h2>
+      <p class="section-copy">Type a payment intent. OmnisRouter checks everything, explains the route and rules in plain English, then waits for your explicit approval before any transfer begins.</p>
+
+      <div style="display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;">
+
+        <!-- AGENT CHAT MOCK -->
+        <div class="agent-mock">
+          <div class="agent-header">
+            <div class="agent-dots">
+              <div class="agent-dot r"></div>
+              <div class="agent-dot y"></div>
+              <div class="agent-dot g"></div>
+            </div>
+            <span class="agent-label">OmnisRouter · Agent Command</span>
+          </div>
+          <div class="agent-body">
+            <div class="msg-user">Send 40 USDC from my Injective balance to 9xQeWvG816bUx9EP...</div>
+            <div class="msg-agent">
+              I found a route for this payment.<br><br>
+              You want to send <strong>40 USDC</strong> from Injective to Solana.
+              <div class="msg-route">
+                Source:       Injective USDC<br>
+                Destination:  Solana USDC<br>
+                Rail:         CCTP standard transfer<br>
+                Recipient:    9xQe...EP<br>
+                ─────────────────────────────<br>
+                Rule check:   ⚠ Approval required &gt; 25 USDC<br>
+                Daily cap:    40 / 100 USDC used<br>
+                Gas:          Sponsored · 18/20 credits left
+              </div>
+              <button class="msg-approve">Approve payment →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RULES PANEL -->
+        <div>
+          <div class="rules-demo">
+            <div style="font-family: 'Courier New', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 16px;">Spending rules</div>
+            <div class="rule-row">
+              <div>
+                <div class="rule-name">Max transfer</div>
+              </div>
+              <div class="rule-val">50 USDC</div>
+            </div>
+            <div class="rule-row">
+              <div>
+                <div class="rule-name">Daily cap</div>
+              </div>
+              <div class="rule-val">100 USDC</div>
+            </div>
+            <div class="rule-row">
+              <div>
+                <div class="rule-name">Approval above</div>
+              </div>
+              <div class="rule-val">25 USDC</div>
+            </div>
+            <div class="rule-row">
+              <div>
+                <div class="rule-name">Destination</div>
+              </div>
+              <div class="rule-val">Solana</div>
+            </div>
+            <div class="rule-row">
+              <div>
+                <div class="rule-name">Gas credits</div>
+              </div>
+              <div class="rule-val">20 / mo</div>
+            </div>
+            <div class="rule-row" style="border-bottom: none;">
+              <div>
+                <div class="rule-name">Agent pause</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; font-size: 11px; color: var(--status-success);">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: var(--status-success);"></div>
+                Active
+              </div>
+            </div>
+          </div>
+          <p style="font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-top: 12px; text-align: center;">
+            Rules run in code · not AI inference
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta-section">
+    <div class="cta-inner">
+      <p class="section-eyebrow" style="text-align: center; margin-bottom: 16px;">Start building</p>
+      <h2 class="cta-h2">Stop doing infrastructure <em>homework.</em></h2>
+      <p class="cta-copy">Connect your wallet, set your spending rules, and send your first cross-chain USDC payment in minutes. No bridge mechanics. No gas confusion. Just a payment.</p>
+      <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+        <button class="btn-primary" style="padding: 14px 32px; font-size: 14px;">Connect Wallet</button>
+        <button class="btn-ghost" style="padding: 13px 32px; font-size: 14px;">View on GitHub</button>
+      </div>
+      <p class="cta-note">Injective testnet · Solana devnet · CCTP standard transfer</p>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-inner">
+      <div>
+        <div class="footer-logo">Omnis<em>Router</em></div>
+        <p class="footer-desc">AI-powered stablecoin payment agent for cross-chain USDC transfers. Built for the Injective × Solana CCTP Hackathon.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-link-label">Product</div>
+        <span class="footer-link">Dashboard</span>
+        <span class="footer-link">Spending Rules</span>
+        <span class="footer-link">Payment Log</span>
+        <span class="footer-link">Receipts</span>
+      </div>
+      <div class="footer-links">
+        <div class="footer-link-label">Docs</div>
+        <span class="footer-link">CCTP Integration</span>
+        <span class="footer-link">Rule Engine</span>
+        <span class="footer-link">Gas Credits</span>
+        <span class="footer-link">API Reference</span>
+      </div>
+      <div class="footer-links">
+        <div class="footer-link-label">Chain</div>
+        <span class="footer-link">Injective</span>
+        <span class="footer-link">Solana</span>
+        <span class="footer-link">Circle CCTP</span>
+      </div>
+    </div>
+    <div style="max-width: 1100px; margin: 0 auto;">
+      <div class="footer-bottom">
+        <span class="footer-copy">© 2026 OmnisRouter · Hackathon MVP</span>
+        <div class="footer-chain">
+          <div class="footer-chain-dot"></div>
+          Injective → Solana · CCTP live
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</div>

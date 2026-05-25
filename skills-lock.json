@@ -18,6 +18,12 @@
       "sourceType": "github",
       "skillPath": "skills/nextjs/SKILL.md",
       "computedHash": "044a0bc722b018b636c9bd23f3dd4e4410fd8b0815d79b1fa1ba3fa7dc5f4d88"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "f0fdd03f4755cbb3b57e20fe6fd4a97c00d34e6780187b6559316986e8d848db"
     }
   }
 }
