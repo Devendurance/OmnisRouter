@@ -1,8 +1,9 @@
 "use client";
 
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppHero, DetailList, Metric, RecentPayments } from "./components";
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
 import { useProductState, type WalletState } from "./product-state";
@@ -11,13 +12,75 @@ import SolanaWalletButton from "./SolanaWalletButton";
 export default function DashboardPage() {
   const { balances, wallets, rules, gasCredits, remainingGasCredits, ruleResult, resetMockState } = useProductState();
   const enabledBalances = Object.entries(balances).filter(([, balance]) => balance.enabled);
+  const { connection } = useConnection();
   const { connected, publicKey } = useWallet();
+  const [solBalanceState, setSolBalanceState] = useState<SolBalanceState>({ status: "idle" });
+  const solBalanceRequestRef = useRef(0);
   const injectiveWallet = useInjectiveWallet();
   const solanaAddress = publicKey?.toBase58() ?? "";
   const solanaDetail = connected ? `${shortenWalletAddress(solanaAddress)} / ${solanaAddress}` : "No Solana wallet connected";
   const injectiveDetail = injectiveWallet.isConnected
     ? `${injectiveWallet.wallet ?? "Injective wallet"} / ${injectiveWallet.shortAddress} / ${injectiveWallet.address}`
     : "No Injective wallet connected";
+
+  async function refreshSolBalance() {
+    if (!connected || !publicKey) {
+      setSolBalanceState({ status: "idle" });
+      return;
+    }
+
+    const currentPublicKey = publicKey;
+    const requestId = ++solBalanceRequestRef.current;
+    setSolBalanceState({ status: "loading" });
+
+    try {
+      const lamports = await connection.getBalance(currentPublicKey);
+
+      if (solBalanceRequestRef.current === requestId) {
+        setSolBalanceState({ status: "success", balanceSol: lamports / LAMPORTS_PER_SOL });
+      }
+    } catch (error) {
+      if (solBalanceRequestRef.current === requestId) {
+        setSolBalanceState({
+          status: "error",
+          error: error instanceof Error ? error.message : "Unable to read SOL balance.",
+        });
+      }
+    }
+  }
+
+  useEffect(() => {
+    const requestId = ++solBalanceRequestRef.current;
+
+    if (!connected || !publicKey) {
+      return;
+    }
+
+    const currentPublicKey = publicKey;
+
+    async function readSolBalance() {
+      setSolBalanceState({ status: "loading" });
+
+      try {
+        const lamports = await connection.getBalance(currentPublicKey);
+
+        if (solBalanceRequestRef.current === requestId) {
+          setSolBalanceState({ status: "success", balanceSol: lamports / LAMPORTS_PER_SOL });
+        }
+      } catch (error) {
+        if (solBalanceRequestRef.current === requestId) {
+          setSolBalanceState({
+            status: "error",
+            error: error instanceof Error ? error.message : "Unable to read SOL balance.",
+          });
+        }
+      }
+    }
+
+    void readSolBalance();
+  }, [connected, connection, publicKey]);
+
+  const solBalanceDisplay = formatSolBalance(connected ? solBalanceState : { status: "idle" });
 
   return (
     <>
@@ -26,8 +89,8 @@ export default function DashboardPage() {
         <div className="card primary-card">
           <p className="eyebrow">Dashboard</p>
           <h2 id="dashboard-title">Mock wallet state</h2>
-          <div className="metric-row"><BalanceMetric label="Solana USDC" value={balances.Solana.USDC.toFixed(2)} detail={solanaDetail} note={connected ? undefined : "Demo balance shown."} badges={connected ? ["Connected wallet", "Demo balance"] : []} /><BalanceMetric label="Injective USDC" value={balances.Injective.USDC.toFixed(2)} detail={injectiveDetail} note={injectiveWallet.isConnected ? undefined : "Demo balance shown."} badges={injectiveWallet.isConnected ? ["Connected wallet", "Demo balance"] : []} /></div>
-          <p className="status-banner warning">Wallet connection is real. USDC balances and transfers are still simulated.</p>
+          <div className="metric-row"><BalanceMetric label="Native SOL gas balance" value={solBalanceDisplay.value} detail={solBalanceDisplay.detail} note={solBalanceDisplay.note} badges={solBalanceDisplay.badges} action={<button aria-label="Refresh native SOL gas balance" className="secondary-button compact" disabled={!connected || solBalanceState.status === "loading"} onClick={() => { void refreshSolBalance(); }} type="button">Refresh</button>} /><BalanceMetric label="Demo USDC balance" value={balances.Solana.USDC.toFixed(2)} detail={solanaDetail} note={connected ? undefined : "Demo balance shown."} badges={connected ? ["Connected wallet", "Demo balance"] : []} /><BalanceMetric label="Injective USDC" value={balances.Injective.USDC.toFixed(2)} detail={injectiveDetail} note={injectiveWallet.isConnected ? undefined : "Demo balance shown."} badges={injectiveWallet.isConnected ? ["Connected wallet", "Demo balance"] : []} /></div>
+          <p className="status-banner warning">SOL balance is real. USDC balance is still simulated.</p>
           <Metric label="Gas credits" value={`${remainingGasCredits}/${gasCredits.monthlyLimit}`} detail="Sponsored transfers" />
           <DetailList entries={[["Solana wallet", connected ? solanaAddress : "No Solana wallet connected - using demo balance"], ["Injective wallet", injectiveWallet.isConnected ? `${injectiveWallet.wallet ?? "Selected wallet"}: ${injectiveWallet.address}` : "No Injective wallet connected - using demo balance"], ["Mock balances", enabledBalances.map(([chain, balance]) => `${chain}: ${balance.USDC.toFixed(2)} USDC`).join(" / ")], ["Coming later", `Base, Arbitrum, and EVM wallet support`], ["Allowed destinations", rules.allowedDestinationChains.join(", ")], ["Approval threshold", `${rules.approvalThreshold} USDC`], ["Router state", rules.emergencyPauseEnabled ? "Emergency paused" : ruleResult.status === "denied" ? "Payment denied" : "Ready"]]} />
           <div className="button-row"><Link className="primary-button" href="/app/agent">Start mock payment</Link><Link className="secondary-button" href="/app/rules">Review rules</Link><button className="secondary-button" onClick={resetMockState} type="button">Reset mock state</button></div>
@@ -47,22 +110,53 @@ function BalanceMetric({
   detail,
   note,
   badges,
+  action,
 }: {
   label: string;
   value: string;
   detail: string;
   note?: string;
   badges: string[];
+  action?: ReactNode;
 }) {
   return (
     <div className="metric">
-      <span>{label}</span>
+      <div className="metric-heading">
+        <span>{label}</span>
+        {action}
+      </div>
       <strong>{value}</strong>
       <small>{detail}</small>
       {note ? <small>{note}</small> : null}
       {badges.length > 0 ? <div className="balance-badges">{badges.map((badge) => <span className="balance-badge" key={badge}>{badge}</span>)}</div> : null}
     </div>
   );
+}
+
+type SolBalanceState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; balanceSol: number }
+  | { status: "error"; error: string };
+
+function formatSolBalance(state: SolBalanceState): { value: string; detail: string; note?: string; badges: string[] } {
+  if (state.status === "loading") {
+    return { value: "Loading...", detail: "Reading devnet SOL balance", badges: ["Devnet", "Real balance"] };
+  }
+
+  if (state.status === "success") {
+    return {
+      value: `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(state.balanceSol)} SOL`,
+      detail: "Read from Solana devnet",
+      badges: ["Devnet", "Real balance"],
+    };
+  }
+
+  if (state.status === "error") {
+    return { value: "Unavailable", detail: "Could not read devnet SOL balance", note: state.error, badges: ["Devnet", "Error"] };
+  }
+
+  return { value: "Connect wallet", detail: "Connect a Solana wallet to read devnet SOL", badges: ["Devnet"] };
 }
 
 function WalletsCard({

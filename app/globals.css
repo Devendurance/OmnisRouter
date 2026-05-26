@@ -280,6 +280,13 @@ dd,
   background: rgba(255, 255, 255, 0.025);
 }
 
+.metric-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .metric strong {
   color: var(--text-primary);
   font-family: "Fraunces", Georgia, serif;
