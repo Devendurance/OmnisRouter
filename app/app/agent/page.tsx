@@ -1,5 +1,6 @@
 "use client";
 
+import { useWallet } from "@solana/wallet-adapter-react";
 import Link from "next/link";
 import { AppHero, DetailList } from "../components";
 import { useProductState } from "../product-state";
@@ -7,8 +8,10 @@ import { shortenAddress } from "../../router-simulator";
 
 export default function AgentPage() {
   const { command, intent, setCommand, route, ruleResult, gas } = useProductState();
+  const { connected, publicKey } = useWallet();
   const canContinue = route.supported && ruleResult.status !== "denied";
   const validation = route.recipientValidation;
+  const solanaAddress = publicKey?.toBase58() ?? "";
 
   return (
     <>
@@ -19,6 +22,7 @@ export default function AgentPage() {
           <h2 id="agent-title">Agent command</h2>
           <label className="command-label" htmlFor="payment-command">Payment command</label>
           <textarea id="payment-command" value={command} onChange={(event) => setCommand(event.target.value)} rows={5} />
+          <p className="status-banner warning">{connected ? `Solana wallet connected: ${shortenAddress(solanaAddress)}. ` : "Solana wallet disconnected. "}USDC balances and route execution are simulated; no real funds move.</p>
           {validation.isValid ? <p className="status-banner success">Valid recipient address · Detected chain type: {validation.chainType} · {shortenAddress(validation.normalizedAddress)}</p> : <p className="status-banner warning">Invalid address warning: {validation.error}</p>}
           {validation.warning ? <p className="status-banner warning">{validation.warning}</p> : null}
           {canContinue ? <Link className="primary-button" href="/app/approval">Review approval</Link> : <p className="status-banner error">{route.reason}</p>}

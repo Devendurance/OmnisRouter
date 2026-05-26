@@ -29,8 +29,8 @@ export function AppHero({ eyebrow, title, copy }: { eyebrow: string; title: Reac
   );
 }
 
-export function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+export function Metric({ label, value, detail, badge }: { label: string; value: string; detail: string; badge?: string }) {
+  return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small>{badge ? <em className="balance-badge">{badge}</em> : null}</div>;
 }
 
 export function RecentPayments() {

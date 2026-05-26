@@ -39,11 +39,25 @@ const defaultGasCredits: GasCreditState = {
 };
 
 type FeeChoice = "deduct_from_transfer" | "top_up_fee";
+type WalletChain = "Solana" | "Injective" | "EVM";
+type WalletConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+
+export type WalletState = {
+  chain: WalletChain;
+  isConnected: boolean;
+  address: string;
+  shortAddress: string;
+  connectionStatus: WalletConnectionStatus;
+  disabled?: boolean;
+};
+
+type WalletsState = Record<WalletChain, WalletState>;
 
 type ProductState = {
   command: string;
   intent: PaymentIntent;
   balances: MockBalances;
+  wallets: WalletsState;
   rules: SpendingRules;
   gasCredits: GasCreditState;
   latestExecution: PaymentExecution | null;
@@ -58,6 +72,8 @@ type ProductContextValue = ProductState & {
   remainingGasCredits: number;
   setCommand: (command: string) => void;
   saveRules: (rules: SpendingRules) => void;
+  mockConnectWallet: (chain: WalletChain) => void;
+  mockDisconnectWallet: (chain: WalletChain) => void;
   setFeeChoice: (choice: FeeChoice) => void;
   simulatePayment: () => PaymentExecution | null;
   resetGasCredits: () => void;
@@ -66,11 +82,24 @@ type ProductContextValue = ProductState & {
 
 const ProductStateContext = createContext<ProductContextValue | null>(null);
 
+const mockWalletAddresses: Record<WalletChain, string> = {
+  Solana: "9xQeWvG816bUx9EPfN9xQeWvG816bUx9EPfN",
+  Injective: "inj1router9xkmockwallet0000000000000000000",
+  EVM: "",
+};
+
+const defaultWallets: WalletsState = {
+  Solana: createWallet("Solana"),
+  Injective: createWallet("Injective"),
+  EVM: createWallet("EVM", true),
+};
+
 function createInitialState(): ProductState {
   return {
     command: defaultCommand,
     intent: parsePaymentIntent(defaultCommand),
     balances: defaultBalances,
+    wallets: defaultWallets,
     rules: defaultRules,
     gasCredits: defaultGasCredits,
     latestExecution: null,
@@ -98,6 +127,7 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
           command,
           intent: parsed.intent ?? parsePaymentIntent(command),
           balances: mergeBalances(parsed.balances),
+          wallets: mergeWallets(parsed.wallets as Partial<WalletsState> | undefined),
           rules,
           gasCredits,
           latestExecution: parsed.latestExecution ?? null,
@@ -146,6 +176,35 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
         latestExecution: null,
         paymentError: null,
         gasCredits: withRemaining(rules.gasCreditLimit, Math.min(current.gasCredits.used, rules.gasCreditLimit)),
+      }));
+    },
+    mockConnectWallet(chain) {
+      if (chain === "EVM") {
+        setState((current) => ({
+          ...current,
+          wallets: {
+            ...current.wallets,
+            EVM: { ...current.wallets.EVM, connectionStatus: "error" },
+          },
+        }));
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        wallets: {
+          ...current.wallets,
+          [chain]: createConnectedWallet(chain),
+        },
+      }));
+    },
+    mockDisconnectWallet(chain) {
+      setState((current) => ({
+        ...current,
+        wallets: {
+          ...current.wallets,
+          [chain]: createWallet(chain, chain === "EVM"),
+        },
       }));
     },
     setFeeChoice(feeChoice) {
@@ -242,4 +301,43 @@ function isEnabledDestination(chain: RouteResult["destinationChain"]): chain is 
 
 function roundUsdc(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function createWallet(chain: WalletChain, disabled = false): WalletState {
+  return {
+    chain,
+    isConnected: false,
+    address: "",
+    shortAddress: "Not connected",
+    connectionStatus: "disconnected",
+    disabled,
+  };
+}
+
+function createConnectedWallet(chain: Exclude<WalletChain, "EVM">): WalletState {
+  const address = mockWalletAddresses[chain];
+
+  return {
+    chain,
+    isConnected: true,
+    address,
+    shortAddress: shortenWalletAddress(address),
+    connectionStatus: "connected",
+  };
+}
+
+function mergeWallets(wallets?: Partial<WalletsState>): WalletsState {
+  return {
+    Solana: { ...defaultWallets.Solana, ...wallets?.Solana },
+    Injective: { ...defaultWallets.Injective, ...wallets?.Injective },
+    EVM: { ...defaultWallets.EVM, ...wallets?.EVM, disabled: true },
+  };
+}
+
+function shortenWalletAddress(address: string): string {
+  if (!address) {
+    return "Not connected";
+  }
+
+  return `${address.slice(0, 6)}...${address.slice(-6)}`;
 }
