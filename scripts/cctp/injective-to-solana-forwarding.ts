@@ -1,164 +1,29 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { formatUnits, type Hex } from "viem";
 import {
-  createPublicClient,
-  createWalletClient,
-  defineChain,
-  encodeFunctionData,
-  formatUnits,
-  http,
-  parseUnits,
-  type Address,
-  type Hex,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { CCTP_DOMAINS, INJECTIVE_TESTNET_CCTP } from "./constants.ts";
-import {
-  buildForwardHookDataWithAtaCreation,
-  encodeSolanaAtaAsBytes32,
-  getForwardingFeeEstimate,
-  getSolanaUsdcAta,
-} from "./forwarding-utils.ts";
+  executeInjectiveToSolanaCctpTransfer,
+  prepareInjectiveToSolanaCctpTransfer,
+  type InjectiveToSolanaCctpPreflight,
+} from "../../lib/server/cctp/injective-to-solana.ts";
 
-const INJECTIVE_TESTNET_EVM_RPC_URL = "https://k8s.testnet.json-rpc.injective.network/";
-const INJECTIVE_TESTNET_EVM_CHAIN_ID = 1439;
 const USDC_DECIMALS = 6;
-const MIN_FINALITY_THRESHOLD = 2000;
-const ZERO_BYTES32 = `0x${"0".repeat(64)}` as const;
-
-const erc20Abi = [
-  {
-    type: "function",
-    name: "approve",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "allowance",
-    stateMutability: "view",
-    inputs: [
-      { name: "owner", type: "address" },
-      { name: "spender", type: "address" },
-    ],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
-
-const tokenMessengerV2Abi = [
-  {
-    type: "function",
-    name: "depositForBurnWithHook",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "amount", type: "uint256" },
-      { name: "destinationDomain", type: "uint32" },
-      { name: "mintRecipient", type: "bytes32" },
-      { name: "burnToken", type: "address" },
-      { name: "destinationCaller", type: "bytes32" },
-      { name: "maxFee", type: "uint256" },
-      { name: "minFinalityThreshold", type: "uint32" },
-      { name: "hookData", type: "bytes" },
-    ],
-    outputs: [],
-  },
-] as const;
 
 loadDotEnv();
 
 const env = readRequiredEnv();
-const amount = parseUnits(env.CCTP_AMOUNT_USDC, USDC_DECIMALS);
-const solanaUsdcAta = getSolanaUsdcAta(env.SOLANA_RECIPIENT_ADDRESS);
-const mintRecipient = encodeSolanaAtaAsBytes32(env.SOLANA_RECIPIENT_ADDRESS) as Hex;
-const hookData = buildForwardHookDataWithAtaCreation(env.SOLANA_RECIPIENT_ADDRESS) as Hex;
-const feeEstimate = await getForwardingFeeEstimate({ includeRecipientSetup: true });
-
-if (feeEstimate.warning) {
-  console.warn(`Forwarding fee warning: ${feeEstimate.warning}`);
-}
-
-if (!feeEstimate.maxFee) {
-  console.error("Unable to compute maxFee from Circle forwarding fee estimate. No transactions sent.");
-  process.exit(1);
-}
-
-const maxFee = BigInt(feeEstimate.maxFee);
-const privateKey = normalizePrivateKey(env.INJECTIVE_EVM_PRIVATE_KEY);
-const account = privateKeyToAccount(privateKey);
-const injectiveTestnetEvm = defineChain({
-  id: INJECTIVE_TESTNET_EVM_CHAIN_ID,
-  name: "Injective EVM Testnet",
-  nativeCurrency: { name: "Injective", symbol: "INJ", decimals: 18 },
-  rpcUrls: {
-    default: { http: [INJECTIVE_TESTNET_EVM_RPC_URL] },
-  },
-});
-const publicClient = createPublicClient({
-  chain: injectiveTestnetEvm,
-  transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
-});
-const walletClient = createWalletClient({
-  account,
-  chain: injectiveTestnetEvm,
-  transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
-});
-const [sourceUsdcBalance, currentAllowance, nativeGasBalance] = await Promise.all([
-  readSourceUsdcBalance(account.address),
-  readCurrentAllowance(account.address, INJECTIVE_TESTNET_CCTP.TokenMessengerV2),
-  readNativeGasBalance(account.address),
-]);
-const approvalNeeded = currentAllowance < amount;
-const estimatedRecipientAmount = amount > maxFee ? amount - maxFee : BigInt(0);
-const safetyErrors = getSafetyErrors({ amount, maxFee, sourceUsdcBalance });
-const approveCalldata = encodeFunctionData({
-  abi: erc20Abi,
-  functionName: "approve",
-  args: [INJECTIVE_TESTNET_CCTP.TokenMessengerV2, amount],
-});
-const burnCalldata = encodeFunctionData({
-  abi: tokenMessengerV2Abi,
-  functionName: "depositForBurnWithHook",
-  args: [
-    amount,
-    CCTP_DOMAINS.Solana,
-    mintRecipient,
-    INJECTIVE_TESTNET_CCTP.USDC,
-    ZERO_BYTES32,
-    maxFee,
-    MIN_FINALITY_THRESHOLD,
-    hookData,
-  ],
+const preflight = await prepareInjectiveToSolanaCctpTransfer({
+  amountUsdc: env.CCTP_AMOUNT_USDC,
+  solanaRecipientAddress: env.SOLANA_RECIPIENT_ADDRESS,
 });
 const realModeEnabled = env.ENABLE_REAL_CCTP === "true";
 const realModeConfirmed = env.CONFIRM_REAL_CCTP === "YES";
 
-printSummary({
-  amount: env.CCTP_AMOUNT_USDC,
-  approveCalldata,
-  burnCalldata,
-  hookData,
-  maxFee: maxFee.toString(),
-  mintRecipient,
-  nativeGasBalance,
-  estimatedRecipientAmount,
-  approvalNeeded,
-  currentAllowance,
-  solanaRecipient: env.SOLANA_RECIPIENT_ADDRESS,
-  solanaUsdcAta: solanaUsdcAta.toBase58(),
-  sourceAddress: account.address,
-  sourceUsdcBalance,
-});
+if (preflight.forwardingFeeWarning) {
+  console.warn(`Forwarding fee warning: ${preflight.forwardingFeeWarning}`);
+}
+
+printSummary(preflight);
 
 if (!realModeEnabled) {
   console.log("");
@@ -174,41 +39,29 @@ if (!realModeEnabled) {
   console.log("");
   console.log("REAL CCTP MODE ENABLED. This will approve and burn testnet USDC on Injective.");
 
-  if (safetyErrors.length > 0) {
+  if (preflight.safetyErrors.length > 0) {
     console.log("");
     console.log("Real mode blocked by preflight safety checks:");
-    for (const error of safetyErrors) {
+    for (const error of preflight.safetyErrors) {
       console.log(`- ${error}`);
     }
     console.log("No transactions sent.");
     process.exit(1);
   }
 
-  if (approvalNeeded) {
-    const approvalHash = await walletClient.sendTransaction({
-      account,
-      to: INJECTIVE_TESTNET_CCTP.USDC,
-      data: approveCalldata,
-    });
-    console.log(`Approval transaction hash: ${approvalHash}`);
-    const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-    console.log(`Approval receipt status: ${approvalReceipt.status}`);
+  const result = await executeInjectiveToSolanaCctpTransfer({
+    amountUsdc: env.CCTP_AMOUNT_USDC,
+    solanaRecipientAddress: env.SOLANA_RECIPIENT_ADDRESS,
+    confirmation: "YES",
+  });
 
-    if (approvalReceipt.status !== "success") {
-      throw new Error("Approval transaction failed. Burn transaction not sent.");
-    }
+  if (result.approvalTxHash) {
+    console.log(`Approval transaction hash: ${result.approvalTxHash}`);
   } else {
     console.log("Approval skipped: current allowance already covers requested amount.");
   }
 
-  const burnHash = await walletClient.sendTransaction({
-    account,
-    to: INJECTIVE_TESTNET_CCTP.TokenMessengerV2,
-    data: burnCalldata,
-  });
-  console.log(`depositForBurnWithHook transaction hash: ${burnHash}`);
-  const burnReceipt = await publicClient.waitForTransactionReceipt({ hash: burnHash });
-  console.log(`Burn receipt status: ${burnReceipt.status}`);
+  console.log(`depositForBurnWithHook transaction hash: ${result.burnTxHash}`);
   console.log("Circle Forwarding Service handles Solana minting. Check Solana USDC balance after ~30-60 seconds.");
 }
 
@@ -260,100 +113,20 @@ function readRequiredEnv() {
     CCTP_AMOUNT_USDC: process.env.CCTP_AMOUNT_USDC as string,
     CONFIRM_REAL_CCTP: process.env.CONFIRM_REAL_CCTP,
     ENABLE_REAL_CCTP: process.env.ENABLE_REAL_CCTP,
-    INJECTIVE_EVM_PRIVATE_KEY: process.env.INJECTIVE_EVM_PRIVATE_KEY as string,
     SOLANA_RECIPIENT_ADDRESS: process.env.SOLANA_RECIPIENT_ADDRESS as string,
   };
 }
 
-function normalizePrivateKey(privateKey: string) {
-  const normalized = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
-
-  if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
-    console.error("INJECTIVE_EVM_PRIVATE_KEY must be a 32-byte hex private key.");
-    process.exit(1);
-  }
-
-  return normalized as Hex;
-}
-
-async function readSourceUsdcBalance(owner: Address) {
-  return publicClient.readContract({
-    address: INJECTIVE_TESTNET_CCTP.USDC,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [owner],
-  });
-}
-
-async function readCurrentAllowance(owner: Address, spender: Address) {
-  return publicClient.readContract({
-    address: INJECTIVE_TESTNET_CCTP.USDC,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: [owner, spender],
-  });
-}
-
-async function readNativeGasBalance(owner: Address) {
-  try {
-    const balance = await publicClient.getBalance({ address: owner });
-
-    return { balance, error: null };
-  } catch (error) {
-    return {
-      balance: null,
-      error: error instanceof Error ? error.message : "Unable to read native INJ gas balance.",
-    };
-  }
-}
-
-function getSafetyErrors({
-  amount,
-  maxFee,
-  sourceUsdcBalance,
-}: {
-  amount: bigint;
-  maxFee: bigint;
-  sourceUsdcBalance: bigint;
-}) {
-  const errors: string[] = [];
-
-  if (amount <= maxFee) {
-    errors.push("Requested amount is too small relative to forwarding fee.");
-  }
-
-  if (sourceUsdcBalance < amount) {
-    errors.push(`Source USDC balance ${formatUsdc(sourceUsdcBalance)} is less than required amount ${formatUsdc(amount)}.`);
-  }
-
-  return errors;
-}
-
-function printSummary(summary: {
-  amount: string;
-  approvalNeeded: boolean;
-  approveCalldata: Hex;
-  burnCalldata: Hex;
-  currentAllowance: bigint;
-  estimatedRecipientAmount: bigint;
-  hookData: Hex;
-  maxFee: string;
-  mintRecipient: Hex;
-  nativeGasBalance: { balance: bigint | null; error: string | null };
-  solanaRecipient: string;
-  solanaUsdcAta: string;
-  sourceAddress: string;
-  sourceUsdcBalance: bigint;
-}) {
+function printSummary(summary: InjectiveToSolanaCctpPreflight) {
   console.log("OmnisRouter Injective -> Solana CCTP Forwarding Service transfer prep");
   console.log("");
   console.log("Source chain: Injective testnet EVM");
   console.log("Destination chain: Solana devnet");
   console.log(`Source EVM address: ${summary.sourceAddress}`);
-  console.log(`Amount: ${summary.amount} USDC (${amount.toString()} base units)`);
+  console.log(`Amount: ${summary.amountUsdc} USDC (${summary.amount.toString()} base units)`);
   console.log(`Source USDC balance: ${formatUsdc(summary.sourceUsdcBalance)} (${summary.sourceUsdcBalance.toString()} base units)`);
-  console.log(`Requested amount: ${formatUsdc(amount)} (${amount.toString()} base units)`);
-  console.log(`Estimated forwarding maxFee: ${formatUsdc(BigInt(summary.maxFee))} (${summary.maxFee} base units)`);
+  console.log(`Requested amount: ${formatUsdc(summary.amount)} (${summary.amount.toString()} base units)`);
+  console.log(`Estimated forwarding maxFee: ${formatUsdc(summary.maxFee)} (${summary.maxFee.toString()} base units)`);
   console.log(`Estimated recipient amount after maxFee: ${formatUsdc(summary.estimatedRecipientAmount)} (${summary.estimatedRecipientAmount.toString()} base units)`);
   console.log(`Current TokenMessengerV2 allowance: ${formatUsdc(summary.currentAllowance)} (${summary.currentAllowance.toString()} base units)`);
   console.log(`Approval needed: ${summary.approvalNeeded ? "yes" : "no"}`);
@@ -362,15 +135,15 @@ function printSummary(summary: {
   } else {
     console.log(`Native INJ gas balance: ${formatUnits(summary.nativeGasBalance.balance, 18)} INJ. Source needs testnet INJ for gas.`);
   }
-  console.log(`Solana recipient wallet: ${summary.solanaRecipient}`);
+  console.log(`Solana recipient wallet: ${summary.solanaRecipientAddress}`);
   console.log(`Derived Solana USDC ATA: ${summary.solanaUsdcAta}`);
   console.log(`mintRecipient bytes32: ${summary.mintRecipient}`);
-  console.log(`maxFee: ${summary.maxFee}`);
-  console.log(`Approval token: ${INJECTIVE_TESTNET_CCTP.USDC}`);
-  console.log(`Approval spender: ${INJECTIVE_TESTNET_CCTP.TokenMessengerV2}`);
-  console.log(`Burn target: ${INJECTIVE_TESTNET_CCTP.TokenMessengerV2}`);
-  console.log(`destinationCaller: ${ZERO_BYTES32}`);
-  console.log(`minFinalityThreshold: ${MIN_FINALITY_THRESHOLD}`);
+  console.log(`maxFee: ${summary.maxFee.toString()}`);
+  console.log(`Approval token: ${summary.contracts.usdc}`);
+  console.log(`Approval spender: ${summary.contracts.tokenMessengerV2}`);
+  console.log(`Burn target: ${summary.contracts.tokenMessengerV2}`);
+  console.log(`destinationCaller: ${summary.contracts.destinationCaller}`);
+  console.log(`minFinalityThreshold: ${summary.contracts.minFinalityThreshold}`);
   console.log(`Hook data: ${summary.hookData}`);
   console.log(`approve calldata preview: ${previewCalldata(summary.approveCalldata)}`);
   console.log(`depositForBurnWithHook calldata preview: ${previewCalldata(summary.burnCalldata)}`);
