@@ -118,6 +118,25 @@ export type InjectiveToSolanaCctpPreflight = {
     minFinalityThreshold: typeof MIN_FINALITY_THRESHOLD;
   };
   forwardingFeeWarning?: string;
+  forwardingFeeExplanation?: string;
+};
+
+type ForwardingFeeEstimate = {
+  explanation?: string;
+  feeOptions?: Array<{
+    finalityThreshold?: string;
+    high?: string;
+    low?: string;
+    med?: string;
+    minimumFee?: string;
+  }>;
+  high?: string;
+  low?: string;
+  maxFee?: string;
+  med?: string;
+  minimumFee?: string;
+  rawResponse?: unknown;
+  warning?: string;
 };
 
 export type InjectiveToSolanaCctpExecutionResult = {
@@ -127,6 +146,28 @@ export type InjectiveToSolanaCctpExecutionResult = {
   solanaRecipientAddress: string;
   solanaUsdcAta: string;
 };
+
+export type InjectiveToSolanaCctpExecutionStage =
+  | "validation"
+  | "prepare/preflight"
+  | "approval transaction"
+  | "approval receipt"
+  | "burn transaction"
+  | "burn receipt";
+
+export class InjectiveToSolanaCctpExecutionError extends Error {
+  approvalTxHash?: Hex | null;
+  cause: unknown;
+  stage: InjectiveToSolanaCctpExecutionStage;
+
+  constructor(stage: InjectiveToSolanaCctpExecutionStage, cause: unknown, approvalTxHash?: Hex | null) {
+    super(getErrorMessage(cause));
+    this.name = "InjectiveToSolanaCctpExecutionError";
+    this.stage = stage;
+    this.cause = cause;
+    this.approvalTxHash = approvalTxHash;
+  }
+}
 
 export async function prepareInjectiveToSolanaCctpTransfer(
   input: PrepareInjectiveToSolanaCctpTransferInput,
@@ -198,6 +239,7 @@ export async function prepareInjectiveToSolanaCctpTransfer(
       minFinalityThreshold: MIN_FINALITY_THRESHOLD,
     },
     forwardingFeeWarning: feeEstimate.warning,
+    forwardingFeeExplanation: feeEstimate.explanation,
   };
 }
 
@@ -205,13 +247,19 @@ export async function executeInjectiveToSolanaCctpTransfer(
   input: ExecuteInjectiveToSolanaCctpTransferInput,
 ): Promise<InjectiveToSolanaCctpExecutionResult> {
   if (input.confirmation !== "YES") {
-    throw new Error("Explicit confirmation is required to execute Injective -> Solana CCTP transfer.");
+    throw new InjectiveToSolanaCctpExecutionError("validation", new Error("Explicit confirmation is required to execute Injective -> Solana CCTP transfer."));
   }
 
-  const preflight = await prepareInjectiveToSolanaCctpTransfer(input);
+  let preflight: InjectiveToSolanaCctpPreflight;
+
+  try {
+    preflight = await prepareInjectiveToSolanaCctpTransfer(input);
+  } catch (error) {
+    throw new InjectiveToSolanaCctpExecutionError("prepare/preflight", error);
+  }
 
   if (preflight.safetyErrors.length > 0) {
-    throw new Error(`Real mode blocked by preflight safety checks: ${preflight.safetyErrors.join("; ")}`);
+    throw new InjectiveToSolanaCctpExecutionError("prepare/preflight", new Error(`Real mode blocked by preflight safety checks: ${preflight.safetyErrors.join("; ")}`));
   }
 
   const privateKey = readInjectivePrivateKeyFromEnv();
@@ -226,27 +274,51 @@ export async function executeInjectiveToSolanaCctpTransfer(
   let approvalTxHash: Hex | null = null;
 
   if (preflight.approvalNeeded) {
-    approvalTxHash = await walletClient.sendTransaction({
-      account,
-      to: INJECTIVE_TESTNET_CCTP.USDC,
-      data: preflight.approveCalldata,
-    });
-    const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalTxHash });
+    try {
+      approvalTxHash = await walletClient.sendTransaction({
+        account,
+        to: INJECTIVE_TESTNET_CCTP.USDC,
+        data: preflight.approveCalldata,
+      });
+    } catch (error) {
+      throw new InjectiveToSolanaCctpExecutionError("approval transaction", error, approvalTxHash);
+    }
+
+    let approvalReceipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
+
+    try {
+      approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalTxHash });
+    } catch (error) {
+      throw new InjectiveToSolanaCctpExecutionError("approval receipt", error, approvalTxHash);
+    }
 
     if (approvalReceipt.status !== "success") {
-      throw new Error("Approval transaction failed. Burn transaction not sent.");
+      throw new InjectiveToSolanaCctpExecutionError("approval receipt", new Error("Approval transaction failed. Burn transaction not sent."), approvalTxHash);
     }
   }
 
-  const burnTxHash = await walletClient.sendTransaction({
-    account,
-    to: INJECTIVE_TESTNET_CCTP.TokenMessengerV2,
-    data: preflight.burnCalldata,
-  });
-  const burnReceipt = await publicClient.waitForTransactionReceipt({ hash: burnTxHash });
+  let burnTxHash: Hex;
+
+  try {
+    burnTxHash = await walletClient.sendTransaction({
+      account,
+      to: INJECTIVE_TESTNET_CCTP.TokenMessengerV2,
+      data: preflight.burnCalldata,
+    });
+  } catch (error) {
+    throw new InjectiveToSolanaCctpExecutionError("burn transaction", error, approvalTxHash);
+  }
+
+  let burnReceipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
+
+  try {
+    burnReceipt = await publicClient.waitForTransactionReceipt({ hash: burnTxHash });
+  } catch (error) {
+    throw new InjectiveToSolanaCctpExecutionError("burn receipt", error, approvalTxHash);
+  }
 
   if (burnReceipt.status !== "success") {
-    throw new Error("depositForBurnWithHook transaction failed.");
+    throw new InjectiveToSolanaCctpExecutionError("burn receipt", new Error("depositForBurnWithHook transaction failed."), approvalTxHash);
   }
 
   return {
@@ -292,6 +364,30 @@ function normalizePrivateKey(privateKey: string) {
   }
 
   return normalized as Hex;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const shortMessage = typeof record.shortMessage === "string" ? record.shortMessage.trim() : "";
+    const details = typeof record.details === "string" ? record.details.trim() : "";
+
+    if (shortMessage) {
+      return shortMessage;
+    }
+
+    if (details) {
+      return details;
+    }
+  }
+
+  const fallback = String(error).trim();
+
+  return fallback || "Unknown CCTP execution error.";
 }
 
 async function readSourceUsdcBalance(publicClient: ReturnType<typeof createInjectivePublicClient>, owner: Address) {
@@ -351,7 +447,8 @@ function getSolanaUsdcAta(solanaWalletAddress: string) {
   const owner = new PublicKey(solanaWalletAddress);
   const mint = new PublicKey(SOLANA_DEVNET_CCTP.UsdcMint);
 
-  return getAssociatedTokenAddressSync(mint, owner);
+  // Forwarding destination may be any valid Solana account; allow off-curve owners for ATA derivation.
+  return getAssociatedTokenAddressSync(mint, owner, true);
 }
 
 function encodeSolanaAtaAsBytes32(solanaWalletAddress: string) {
@@ -390,7 +487,7 @@ function publicKeyToBytes32Hex(publicKey: PublicKey) {
   return `0x${Buffer.from(bytes).toString("hex")}`;
 }
 
-async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boolean } = {}) {
+async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boolean } = {}): Promise<ForwardingFeeEstimate> {
   const url = options.includeRecipientSetup
     ? `${CIRCLE_SANDBOX_FORWARD_FEE_URL}&includeRecipientSetup=true`
     : CIRCLE_SANDBOX_FORWARD_FEE_URL;
@@ -417,7 +514,7 @@ async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boole
   }
 }
 
-function extractForwardingFees(data: unknown) {
+function extractForwardingFees(data: unknown): ForwardingFeeEstimate {
   if (Array.isArray(data)) {
     return extractForwardingFeeOptions(data);
   }
@@ -446,7 +543,7 @@ function extractForwardingFees(data: unknown) {
   return { warning: "Circle fee API response did not include low/med/high fee tiers." };
 }
 
-function extractForwardingFeeOptions(values: unknown[]) {
+function extractForwardingFeeOptions(values: unknown[]): ForwardingFeeEstimate {
   const feeOptions = values
     .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
     .map((record) => {
@@ -463,21 +560,32 @@ function extractForwardingFeeOptions(values: unknown[]) {
       };
     });
 
-  const firstCompleteOption = feeOptions.find((option) => option.low || option.med || option.high);
+  const selectedOption = feeOptions.find((option) => option.finalityThreshold === String(MIN_FINALITY_THRESHOLD));
 
-  if (!firstCompleteOption) {
+  if (!selectedOption) {
     return {
-      explanation: "Circle returned fee options, but none included forwardFee.low/med/high values.",
+      explanation: `Circle returned fee options, but none matched finalityThreshold ${MIN_FINALITY_THRESHOLD}.`,
       feeOptions,
-      warning: "Circle fee API response did not include forward fee tiers.",
+      warning: "Circle fee API response did not include the required finality threshold option.",
+    };
+  }
+
+  const maxFee = selectedOption.high ?? selectedOption.med;
+
+  if (!maxFee) {
+    return {
+      ...selectedOption,
+      explanation: `${buildFeeExplanation(selectedOption)} Cannot compute maxFee without forwardFee.high or forwardFee.med for finalityThreshold ${MIN_FINALITY_THRESHOLD}.`,
+      feeOptions,
+      warning: "Circle fee API response did not include high or med forward fee for the required finality threshold.",
     };
   }
 
   return {
-    ...firstCompleteOption,
-    explanation: buildFeeExplanation(firstCompleteOption),
+    ...selectedOption,
+    explanation: `Selected finalityThreshold ${MIN_FINALITY_THRESHOLD}. ${buildFeeExplanation(selectedOption)}`,
     feeOptions,
-    maxFee: computeMaxForwardFee(feeOptions),
+    maxFee,
   };
 }
 
