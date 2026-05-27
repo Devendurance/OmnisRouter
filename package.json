@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "cctp:validate": "node --no-warnings --experimental-strip-types scripts/cctp/validate-config.ts",
-    "cctp:test-forwarding-utils": "node --no-warnings --experimental-strip-types scripts/cctp/test-forwarding-utils.ts"
+    "cctp:test-forwarding-utils": "node --no-warnings --experimental-strip-types scripts/cctp/test-forwarding-utils.ts",
+    "cctp:injective-to-solana": "node --no-warnings --experimental-strip-types scripts/cctp/injective-to-solana-forwarding.ts"
   },
   "dependencies": {
     "@injectivelabs/networks": "^1.19.19",
