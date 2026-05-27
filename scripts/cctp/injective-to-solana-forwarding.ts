@@ -141,6 +141,7 @@ const burnCalldata = encodeFunctionData({
   ],
 });
 const realModeEnabled = env.ENABLE_REAL_CCTP === "true";
+const realModeConfirmed = env.CONFIRM_REAL_CCTP === "YES";
 
 printSummary({
   amount: env.CCTP_AMOUNT_USDC,
@@ -163,6 +164,13 @@ if (!realModeEnabled) {
   console.log("");
   console.log("Dry run only. No transactions sent.");
 } else {
+  if (!realModeConfirmed) {
+    console.log("");
+    console.log("Real mode requested, but CONFIRM_REAL_CCTP=YES is required.");
+    console.log("No transactions sent.");
+    process.exit(1);
+  }
+
   console.log("");
   console.log("REAL CCTP MODE ENABLED. This will approve and burn testnet USDC on Injective.");
 
@@ -250,6 +258,7 @@ function readRequiredEnv() {
 
   return {
     CCTP_AMOUNT_USDC: process.env.CCTP_AMOUNT_USDC as string,
+    CONFIRM_REAL_CCTP: process.env.CONFIRM_REAL_CCTP,
     ENABLE_REAL_CCTP: process.env.ENABLE_REAL_CCTP,
     INJECTIVE_EVM_PRIVATE_KEY: process.env.INJECTIVE_EVM_PRIVATE_KEY as string,
     SOLANA_RECIPIENT_ADDRESS: process.env.SOLANA_RECIPIENT_ADDRESS as string,
