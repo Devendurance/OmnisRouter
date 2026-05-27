@@ -42,11 +42,31 @@ console.log("");
 
 if (feeEstimate.warning) {
   console.warn(`Fee estimate warning: ${feeEstimate.warning}`);
-} else {
-  console.log("Forwarding fee estimate");
-  console.log(`- low: ${feeEstimate.low ?? "unavailable"}`);
-  console.log(`- med: ${feeEstimate.med ?? "unavailable"}`);
-  console.log(`- high: ${feeEstimate.high ?? "unavailable"}`);
+}
+
+if (feeEstimate.rawResponse !== undefined) {
+  console.log("Raw Circle fee response");
+  console.log(JSON.stringify(feeEstimate.rawResponse, null, 2));
+  console.log("");
+}
+
+if (feeEstimate.feeOptions?.length) {
+  console.log("Parsed forwarding fee options");
+  for (const option of feeEstimate.feeOptions) {
+    console.log(`- finalityThreshold=${option.finalityThreshold ?? "unknown"}, minimumFee=${option.minimumFee ?? "unknown"}, low=${option.low ?? "not returned"}, med=${option.med ?? "not returned"}, high=${option.high ?? "not returned"}`);
+  }
+  console.log("");
+}
+
+if (feeEstimate.low || feeEstimate.med || feeEstimate.high) {
+  console.log("Selected forwarding fee estimate");
+  console.log(`- low: ${feeEstimate.low ?? "not returned by Circle"}`);
+  console.log(`- med: ${feeEstimate.med ?? "not returned by Circle"}`);
+  console.log(`- high: ${feeEstimate.high ?? "not returned by Circle"}`);
+  console.log(`- maxFee: ${feeEstimate.maxFee ?? "cannot compute without high fee"}`);
+  console.log(`- explanation: ${feeEstimate.explanation ?? "No explanation provided."}`);
+} else if (!feeEstimate.warning) {
+  console.log("Forwarding fee estimate unavailable: Circle response did not include parseable forwardFee tiers.");
 }
 
 if (validationErrors.length > 0) {

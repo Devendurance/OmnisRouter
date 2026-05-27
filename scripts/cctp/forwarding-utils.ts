@@ -10,6 +10,16 @@ type ForwardingFeeEstimate = {
   low?: string;
   med?: string;
   high?: string;
+  maxFee?: string;
+  rawResponse?: unknown;
+  feeOptions?: Array<{
+    finalityThreshold?: string;
+    minimumFee?: string;
+    low?: string;
+    med?: string;
+    high?: string;
+  }>;
+  explanation?: string;
   warning?: string;
 };
 
@@ -67,7 +77,10 @@ export async function getForwardingFeeEstimate(options: { includeRecipientSetup?
 
     const data = await response.json() as unknown;
 
-    return extractForwardingFees(data);
+    return {
+      rawResponse: data,
+      ...extractForwardingFees(data),
+    };
   } catch (error) {
     return {
       warning: error instanceof Error
@@ -88,6 +101,10 @@ function publicKeyToBytes32Hex(publicKey: PublicKey) {
 }
 
 function extractForwardingFees(data: unknown): ForwardingFeeEstimate {
+  if (Array.isArray(data)) {
+    return extractForwardingFeeOptions(data);
+  }
+
   if (!data || typeof data !== "object") {
     return { warning: "Circle fee API returned an unexpected response." };
   }
@@ -112,6 +129,40 @@ function extractForwardingFees(data: unknown): ForwardingFeeEstimate {
   return { warning: "Circle fee API response did not include low/med/high fee tiers." };
 }
 
+function extractForwardingFeeOptions(values: unknown[]): ForwardingFeeEstimate {
+  const feeOptions = values
+    .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
+    .map((record) => {
+      const forwardFee = record.forwardFee && typeof record.forwardFee === "object"
+        ? record.forwardFee as Record<string, unknown>
+        : undefined;
+
+      return {
+        finalityThreshold: stringifyFee(record.finalityThreshold),
+        minimumFee: stringifyFee(record.minimumFee),
+        low: stringifyFee(forwardFee?.low),
+        med: stringifyFee(forwardFee?.med),
+        high: stringifyFee(forwardFee?.high),
+      };
+    });
+  const firstCompleteOption = feeOptions.find((option) => option.low || option.med || option.high);
+
+  if (!firstCompleteOption) {
+    return {
+      explanation: "Circle returned fee options, but none included forwardFee.low/med/high values.",
+      feeOptions,
+      warning: "Circle fee API response did not include forward fee tiers.",
+    };
+  }
+
+  return {
+    ...firstCompleteOption,
+    explanation: buildFeeExplanation(firstCompleteOption),
+    feeOptions,
+    maxFee: computeMaxForwardFee(feeOptions),
+  };
+}
+
 function pickFeeTiers(record: Record<string, unknown>): ForwardingFeeEstimate {
   return {
     low: stringifyFee(record.low ?? record.lowFee ?? record.minimumFee),
@@ -130,4 +181,43 @@ function stringifyFee(value: unknown) {
   }
 
   return undefined;
+}
+
+function computeMaxForwardFee(feeOptions: Array<{ high?: string; minimumFee?: string }>) {
+  const maxFee = feeOptions.reduce<bigint | null>((currentMax, option) => {
+    const high = parseIntegerString(option.high);
+    const minimumFee = parseIntegerString(option.minimumFee) ?? BigInt(0);
+
+    if (high === undefined) {
+      return currentMax;
+    }
+
+    const candidate = high + minimumFee;
+
+    return currentMax === null || candidate > currentMax ? candidate : currentMax;
+  }, null);
+
+  return maxFee === null ? undefined : maxFee.toString();
+}
+
+function parseIntegerString(value: string | undefined) {
+  if (!value || !/^\d+$/.test(value)) {
+    return undefined;
+  }
+
+  return BigInt(value);
+}
+
+function buildFeeExplanation(option: { low?: string; med?: string; high?: string }) {
+  const missing = [
+    option.low ? undefined : "low",
+    option.med ? undefined : "med",
+    option.high ? undefined : "high",
+  ].filter(Boolean);
+
+  if (missing.length === 0) {
+    return "Circle returned forwardFee.low, forwardFee.med, and forwardFee.high values.";
+  }
+
+  return `Circle did not return ${missing.join("/")} forward fee value(s) for the selected option.`;
 }
