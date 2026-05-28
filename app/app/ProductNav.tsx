@@ -11,6 +11,7 @@ const navItems = [
   ["/app/approval", "Approval"],
   ["/app/payment", "Payment"],
   ["/app/receipt", "Receipt"],
+  ["/app/cctp-lab", "CCTP Lab"],
 ] as const;
 
 export default function ProductNav() {

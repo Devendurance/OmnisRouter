@@ -518,6 +518,41 @@ textarea:focus {
   text-transform: uppercase;
 }
 
+.cctp-lab-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.cctp-lab-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(3, 86, 197, 0.11), transparent 38%);
+}
+
+.cctp-lab-card > * {
+  position: relative;
+}
+
+.cctp-hero-panel .signal-card {
+  border-color: var(--accent-border);
+}
+
+.cctp-action-row,
+.cctp-result-panel {
+  margin-top: 20px;
+}
+
+.cctp-confirm-row {
+  margin-top: 24px;
+}
+
+.cctp-warning-list {
+  display: grid;
+  gap: 10px;
+}
+
 .payments-list {
   display: grid;
   gap: 12px;
