@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { DetailList } from "../components";
 import { useProductState } from "../product-state";
+import { injectiveTestnetTxUrl, shortenHash } from "../../../lib/explorers";
 
 type ApiState<T> =
   | { status: "idle" }
@@ -217,16 +218,17 @@ function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: num
         ["Source EVM address", text(preflight.sourceEvmAddress)],
         ["Source USDC balance", amount(preflight.sourceUsdcBalance)],
         ["Requested amount", amount(preflight.requestedAmount)],
-        ["Forwarding fee", amount(preflight.forwardingMaxFee)],
-        ["Estimated recipient amount", amount(preflight.estimatedRecipientAmount)],
-        ["Source gas sponsor", "OmnisRouter"],
-        ["Credits remaining", String(creditsRemaining)],
         ["Approval needed", text(preflight.approvalNeeded)],
         ["Native INJ gas balance", gas(preflight.nativeInjGasBalance)],
         ["Solana recipient wallet", text(preflight.solanaRecipientWallet)],
         ["Solana USDC ATA", text(preflight.solanaUsdcAta)],
       ]} />
       <Warnings value={preflight.warnings} />
+      <CostBreakdown
+        forwardingMaxFee={preflight.forwardingMaxFee}
+        estimatedRecipientAmount={preflight.estimatedRecipientAmount}
+        creditsRemaining={creditsRemaining}
+      />
     </div>
   );
 }
@@ -236,14 +238,15 @@ function ExecutionPanel({ result }: { result: ExecuteResponse }) {
     <div className="cctp-result-panel">
       <p className="status-banner success">Execution submitted</p>
       <DetailList entries={[
-        ["Approval tx", result.approvalTxHash ?? "Approval skipped"],
-        ["Burn tx", result.burnTxHash ?? "Pending"],
-        ["Requested amount", amount(result.requestedAmount)],
-        ["Forwarding fee", amount(result.forwardingMaxFee)],
-        ["Estimated recipient amount", result.estimatedRecipientAmount?.usdc ? `${result.estimatedRecipientAmount.usdc} USDC` : "Unknown"],
-        ["Source gas sponsor", "OmnisRouter"],
+        ["Approval tx", txLink(result.approvalTxHash, "Approval skipped")],
+        ["Burn tx", txLink(result.burnTxHash, "Pending")],
         ["Forwarding service", result.message ?? "Circle Forwarding Service handles Solana minting."],
       ]} />
+      <CostBreakdown
+        forwardingMaxFee={result.forwardingMaxFee}
+        estimatedRecipientAmount={result.estimatedRecipientAmount}
+        creditsRemaining={0}
+      />
     </div>
   );
 }
@@ -292,4 +295,53 @@ function text(value: unknown) {
   }
 
   return "Unavailable";
+}
+
+function usdcOnly(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return typeof record.usdc === "string" ? record.usdc : undefined;
+}
+
+function txLink(hash: string | null | undefined, fallback: string) {
+  if (!hash) {
+    return fallback;
+  }
+
+  return (
+    <a href={injectiveTestnetTxUrl(hash)} target="_blank" rel="noreferrer">
+      {shortenHash(hash)}
+    </a>
+  );
+}
+
+function CostBreakdown({
+  creditsRemaining: _creditsRemaining,
+  estimatedRecipientAmount,
+  forwardingMaxFee,
+}: {
+  creditsRemaining: number;
+  estimatedRecipientAmount: unknown;
+  forwardingMaxFee: unknown;
+}) {
+  const feeUsdc = usdcOnly(forwardingMaxFee);
+  const receivedUsdc = usdcOnly(estimatedRecipientAmount);
+
+  return (
+    <div className="cost-breakdown" aria-label="Transfer cost breakdown">
+      <p className="eyebrow">Transfer cost breakdown</p>
+      <p className="status-banner success">
+        OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is protocol-level and is deducted from the transferred USDC amount.
+      </p>
+      <DetailList entries={[
+        ["Source-chain INJ gas", "Paid by OmnisRouter (sponsored by gas credits)"],
+        ["Circle CCTP forwarding fee", feeUsdc ? `Deducted from transfer — ${feeUsdc} USDC` : "Unavailable"],
+        ["Estimated received amount", receivedUsdc ? `${receivedUsdc} USDC` : "Unavailable"],
+      ]} />
+    </div>
+  );
 }

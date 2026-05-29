@@ -548,6 +548,18 @@ textarea:focus {
   margin-top: 24px;
 }
 
+.cost-breakdown {
+  margin-top: 24px;
+  border: 1px solid var(--accent-border);
+  border-radius: 18px;
+  background: rgba(3, 86, 197, 0.06);
+  padding: 18px;
+}
+
+.cost-breakdown .details-list {
+  margin-top: 16px;
+}
+
 .cctp-warning-list {
   display: grid;
   gap: 10px;
