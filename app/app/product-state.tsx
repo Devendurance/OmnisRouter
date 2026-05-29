@@ -20,6 +20,7 @@ import {
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "omnis-router-product-state-v2";
+const DAILY_GAS_CREDIT_LIMIT = 5;
 
 export const defaultCommand = "send 40 USDC to inj1router9xk";
 
@@ -28,14 +29,15 @@ export const defaultRules: SpendingRules = {
   dailyTransferLimit: 250,
   approvalThreshold: 25,
   allowedDestinationChains: ["Injective", "Solana"],
-  gasCreditLimit: 20,
+  gasCreditLimit: DAILY_GAS_CREDIT_LIMIT,
   emergencyPauseEnabled: false,
 };
 
 const defaultGasCredits: GasCreditState = {
-  monthlyLimit: 20,
-  used: 0,
-  remaining: 20,
+  dailyLimit: DAILY_GAS_CREDIT_LIMIT,
+  usedToday: 0,
+  lastResetDate: getLocalDateKey(),
+  remaining: DAILY_GAS_CREDIT_LIMIT,
 };
 
 type FeeChoice = "deduct_from_transfer" | "top_up_fee";
@@ -76,6 +78,7 @@ type ProductContextValue = ProductState & {
   mockDisconnectWallet: (chain: WalletChain) => void;
   setFeeChoice: (choice: FeeChoice) => void;
   simulatePayment: () => PaymentExecution | null;
+  recordRealSponsoredExecution: () => void;
   resetGasCredits: () => void;
   resetMockState: () => void;
 };
@@ -120,8 +123,7 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(stored) as Partial<ProductState>;
         const command = parsed.command ?? defaultCommand;
         const rules = { ...defaultRules, ...parsed.rules };
-        const storedGasCredits = { ...defaultGasCredits, ...parsed.gasCredits };
-        const gasCredits = withRemaining(storedGasCredits.monthlyLimit, storedGasCredits.used);
+        const gasCredits = normalizeGasCredits(parsed.gasCredits);
 
         setState({
           command,
@@ -142,6 +144,11 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) {
+      return;
+    }
+
+    if (state.gasCredits.lastResetDate !== getLocalDateKey()) {
+      setState((current) => ({ ...current, gasCredits: withRemaining(0) }));
       return;
     }
 
@@ -175,7 +182,7 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
         rules,
         latestExecution: null,
         paymentError: null,
-        gasCredits: withRemaining(rules.gasCreditLimit, Math.min(current.gasCredits.used, rules.gasCreditLimit)),
+        gasCredits: withRemaining(Math.min(current.gasCredits.usedToday, DAILY_GAS_CREDIT_LIMIT)),
       }));
     },
     mockConnectWallet(chain) {
@@ -250,18 +257,23 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
             USDC: roundUsdc(current.balances[destinationChain].USDC + creditAmount),
           },
         },
-        gasCredits: gas.feeMode === "sponsored"
-          ? withRemaining(current.gasCredits.monthlyLimit, Math.min(current.gasCredits.used + 1, current.gasCredits.monthlyLimit))
-          : current.gasCredits,
+        gasCredits: current.gasCredits,
       }));
 
       return execution;
     },
+    recordRealSponsoredExecution() {
+      setState((current) => ({
+        ...current,
+        gasCredits: withRemaining(Math.min(current.gasCredits.usedToday + 1, DAILY_GAS_CREDIT_LIMIT)),
+        paymentError: null,
+      }));
+    },
     resetGasCredits() {
-      setState((current) => ({ ...current, gasCredits: withRemaining(current.gasCredits.monthlyLimit, 0), paymentError: null }));
+      setState((current) => ({ ...current, gasCredits: withRemaining(0), paymentError: null }));
     },
     resetMockState() {
-      setState(createInitialState());
+      setState((current) => ({ ...createInitialState(), gasCredits: current.gasCredits }));
     },
   }), [gas, route, ruleResult, state]);
 
@@ -278,12 +290,39 @@ export function useProductState() {
   return context;
 }
 
-function withRemaining(monthlyLimit: number, used: number): GasCreditState {
+type StoredGasCredits = Partial<GasCreditState> & {
+  monthlyLimit?: unknown;
+  used?: unknown;
+};
+
+function normalizeGasCredits(value: unknown): GasCreditState {
+  const today = getLocalDateKey();
+  const stored = value && typeof value === "object" ? value as StoredGasCredits : {};
+  const storedDate = typeof stored.lastResetDate === "string" ? stored.lastResetDate : today;
+  const rawUsedToday = typeof stored.usedToday === "number" ? stored.usedToday : typeof stored.used === "number" ? stored.used : 0;
+  const usedToday = storedDate === today ? rawUsedToday : 0;
+
+  return withRemaining(usedToday, today);
+}
+
+function withRemaining(usedToday: number, lastResetDate = getLocalDateKey()): GasCreditState {
+  const normalizedUsed = Math.max(0, Math.min(usedToday, DAILY_GAS_CREDIT_LIMIT));
+
   return {
-    monthlyLimit,
-    used,
-    remaining: Math.max(monthlyLimit - used, 0),
+    dailyLimit: DAILY_GAS_CREDIT_LIMIT,
+    usedToday: normalizedUsed,
+    lastResetDate,
+    remaining: Math.max(DAILY_GAS_CREDIT_LIMIT - normalizedUsed, 0),
   };
+}
+
+function getLocalDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function mergeBalances(balances?: Partial<MockBalances>): MockBalances {

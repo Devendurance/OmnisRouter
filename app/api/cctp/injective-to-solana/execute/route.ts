@@ -10,6 +10,17 @@ import {
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_TESTNET_CCTP";
 const SERVER_EXECUTION_CONFIRMATION = "YES";
+const DAILY_SPONSORED_EXECUTION_LIMIT = 5;
+const ROUTE_LIMITER_NAME = "injective-to-solana-cctp";
+const DAILY_LIMIT_EXHAUSTED_ERROR = "Daily sponsored gas credits exhausted. Try again tomorrow or use paid mode when available.";
+
+type DailyLimiterEntry = {
+  dateKey: string;
+  successfulExecutions: number;
+};
+
+// MVP in-memory limiter. Production should use Redis/database-backed rate limiting per authenticated user/wallet.
+const dailyExecutionLimiter = new Map<string, DailyLimiterEntry>();
 
 type ExecuteRequestBody = {
   amountUsdc?: unknown;
@@ -21,6 +32,8 @@ type ExecuteRequestBody = {
 // Do not deploy publicly without authentication, authorization, and rate limits.
 export async function POST(request: Request) {
   let stage = "validation";
+  let executionSubmitted = false;
+  let reservedLimiterKey: string | null = null;
 
   try {
     if (process.env.ENABLE_CCTP_EXECUTION_API !== "true") {
@@ -40,12 +53,21 @@ export async function POST(request: Request) {
       solanaRecipientAddress: validation.solanaRecipientAddress,
     });
 
+    const limiterKey = getDailyLimiterKey(request, ROUTE_LIMITER_NAME);
+
+    if (!reserveSponsoredExecutionCredit(limiterKey)) {
+      return NextResponse.json({ ok: false, error: DAILY_LIMIT_EXHAUSTED_ERROR }, { status: 429 });
+    }
+
+    reservedLimiterKey = limiterKey;
+
     stage = "execution";
     const result = await executeInjectiveToSolanaCctpTransfer({
       amountUsdc: validation.amountUsdc,
       confirmation: SERVER_EXECUTION_CONFIRMATION,
       solanaRecipientAddress: validation.solanaRecipientAddress,
     });
+    executionSubmitted = true;
 
     stage = "response building";
     return NextResponse.json(toJsonSafe({
@@ -86,6 +108,10 @@ export async function POST(request: Request) {
       message: "Circle Forwarding Service handles Solana minting. Refresh Solana USDC balance after ~30-90 seconds.",
     }));
   } catch (error) {
+    if (reservedLimiterKey && !executionSubmitted) {
+      rollbackSponsoredExecutionCredit(reservedLimiterKey);
+    }
+
     const serializedError = serializeCctpError(error);
     const failedStage = getFailedStage(error, stage);
     const approvalTxHash = getApprovalTxHash(error);
@@ -96,8 +122,7 @@ export async function POST(request: Request) {
       ok: false,
       failedStage,
       approvalTxHash,
-      error: serializedError.message,
-      errorDetails: serializedError,
+      error: "Unable to execute Injective to Solana CCTP transfer.",
     }), { status: 500 });
   }
 }
@@ -142,6 +167,59 @@ function validateBody(body: ExecuteRequestBody) {
 
 function formatUsdc(value: bigint) {
   return formatUnits(value, USDC_DECIMALS);
+}
+
+function getDailyLimiterKey(request: Request, routeName: string) {
+  return `${getRequestIp(request)}:${routeName}`;
+}
+
+function getRequestIp(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const realIp = request.headers.get("x-real-ip")?.trim();
+
+  return forwardedFor || realIp || "unknown-ip";
+}
+
+function reserveSponsoredExecutionCredit(key: string) {
+  const entry = getDailyLimiterEntry(key);
+
+  if (entry.successfulExecutions >= DAILY_SPONSORED_EXECUTION_LIMIT) {
+    return false;
+  }
+
+  dailyExecutionLimiter.set(key, {
+    ...entry,
+    successfulExecutions: entry.successfulExecutions + 1,
+  });
+
+  return true;
+}
+
+function rollbackSponsoredExecutionCredit(key: string) {
+  const entry = getDailyLimiterEntry(key);
+
+  dailyExecutionLimiter.set(key, {
+    ...entry,
+    successfulExecutions: Math.max(entry.successfulExecutions - 1, 0),
+  });
+}
+
+function getDailyLimiterEntry(key: string) {
+  const dateKey = getUtcDateKey();
+  const existing = dailyExecutionLimiter.get(key);
+
+  if (existing?.dateKey === dateKey) {
+    return existing;
+  }
+
+  const freshEntry = { dateKey, successfulExecutions: 0 };
+  dailyExecutionLimiter.set(key, freshEntry);
+
+  return freshEntry;
+}
+
+function getUtcDateKey() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function logExecutionError({ error, failedStage }: { error: SerializedCctpError; failedStage: string }) {

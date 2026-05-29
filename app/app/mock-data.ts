@@ -17,11 +17,11 @@ export const defaultRules: SpendingRules = {
   dailyTransferLimit: 250,
   approvalThreshold: 25,
   allowedDestinationChains: ["Injective", "Solana"],
-  gasCreditLimit: 20,
+  gasCreditLimit: 5,
   emergencyPauseEnabled: false,
 };
 
-export const gasCredits: GasCreditState = { monthlyLimit: 20, used: 0, remaining: 20 };
+export const gasCredits: GasCreditState = { dailyLimit: 5, usedToday: 0, lastResetDate: new Date().toLocaleDateString("en-CA"), remaining: 5 };
 
 export const recentPayments = [
   { id: "PMT-1042", amount: "40 USDC", route: "Solana -> Injective", status: "Complete" },

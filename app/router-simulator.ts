@@ -30,8 +30,9 @@ export type SpendingRules = {
 };
 
 export type GasCreditState = {
-  monthlyLimit: number;
-  used: number;
+  dailyLimit: number;
+  usedToday: number;
+  lastResetDate: string;
   remaining: number;
 };
 
@@ -57,6 +58,17 @@ export type RouteDefinition = {
   destinationMintMode: string;
 };
 
+export type RealRouteCandidate = {
+  id: string;
+  asset: "USDC";
+  sourceChain: "Injective";
+  destinationChain: "Solana";
+  protocol: "Circle CCTP Forwarding Service";
+  executionMode: "real-testnet";
+  sourceAsset: "Injective testnet USDC";
+  destinationAsset: "Solana devnet USDC";
+};
+
 export type RouteResult = {
   supported: boolean;
   recommended: boolean;
@@ -69,6 +81,7 @@ export type RouteResult = {
   destinationMintMode?: string;
   reason: string;
   definition?: RouteDefinition;
+  realRouteCandidate?: RealRouteCandidate;
 };
 
 export type GasResult = {
@@ -129,6 +142,17 @@ export const routeRegistry: RouteDefinition[] = [
     destinationMintMode: "forwarding-service-or-relay",
   },
 ];
+
+const injectiveToSolanaRealCctpCandidate: RealRouteCandidate = {
+  id: "injective-testnet-usdc-solana-devnet-usdc-cctp-forwarding-service",
+  asset: "USDC",
+  sourceChain: "Injective",
+  destinationChain: "Solana",
+  protocol: "Circle CCTP Forwarding Service",
+  executionMode: "real-testnet",
+  sourceAsset: "Injective testnet USDC",
+  destinationAsset: "Solana devnet USDC",
+};
 
 export function validateRecipientAddress(address: string): RecipientAddressValidation {
   const normalizedAddress = address.trim();
@@ -285,6 +309,8 @@ export function resolvePaymentRoute(
 ): RouteResult {
   const recipientValidation = validateRecipientAddress(intent.recipientAddress);
   const destinationChain = recipientValidation.chainType;
+  const requestedSource = normalizeChain(intent.optionalSourceChain);
+  const realRouteCandidate = getRealCctpCandidate(intent, recipientValidation, requestedSource);
 
   if (!recipientValidation.isValid) {
     return {
@@ -293,6 +319,7 @@ export function resolvePaymentRoute(
       destinationChain,
       recipientValidation,
       reason: recipientValidation.error ?? "Invalid recipient address.",
+      realRouteCandidate,
     };
   }
 
@@ -303,6 +330,7 @@ export function resolvePaymentRoute(
       destinationChain,
       recipientValidation,
       reason: "EVM address detected, but exact EVM destination chain cannot be inferred from address alone. EVM routing is not enabled in this MVP yet.",
+      realRouteCandidate,
     };
   }
 
@@ -313,10 +341,10 @@ export function resolvePaymentRoute(
       destinationChain,
       recipientValidation,
       reason: "Enter a valid Solana or Injective recipient address to resolve a supported route.",
+      realRouteCandidate,
     };
   }
 
-  const requestedSource = normalizeChain(intent.optionalSourceChain);
   const candidateRoutes = supportedRoutes.filter(
     (route) =>
       route.asset === intent.asset &&
@@ -338,6 +366,7 @@ export function resolvePaymentRoute(
       reason: candidateRoutes.length === 0
         ? "No simulated USDC CCTP route is enabled for this destination in the MVP."
         : `No enabled source chain has enough ${intent.asset} balance for this route.`,
+      realRouteCandidate,
     };
   }
 
@@ -353,7 +382,28 @@ export function resolvePaymentRoute(
     destinationMintMode: route.destinationMintMode,
     reason: `${route.protocol} route recommended with ${route.destinationMintMode}.`,
     definition: route,
+    realRouteCandidate,
   };
+}
+
+function getRealCctpCandidate(
+  intent: PaymentIntent,
+  recipientValidation: RecipientAddressValidation,
+  requestedSource: ChainName | undefined,
+): RealRouteCandidate | undefined {
+  const sourceDoesNotConflict = !requestedSource || requestedSource === "Injective";
+
+  if (
+    intent.asset.toUpperCase() === "USDC" &&
+    intent.amount > 0 &&
+    recipientValidation.isValid &&
+    recipientValidation.chainType === "Solana" &&
+    sourceDoesNotConflict
+  ) {
+    return injectiveToSolanaRealCctpCandidate;
+  }
+
+  return undefined;
 }
 
 export function validateSpendingRules(
@@ -394,12 +444,12 @@ export function validateSpendingRules(
 }
 
 export function checkGasCredits(gasCredits: GasCreditState): GasResult {
-  const remaining = Math.max(gasCredits.monthlyLimit - gasCredits.used, 0);
+  const remaining = Math.max(gasCredits.dailyLimit - gasCredits.usedToday, 0);
 
   if (remaining <= 0) {
     return {
       feeMode: "user_choice_required",
-      uiText: "Gas credits exhausted. Choose whether to deduct 0.03 USDC or top up the fee.",
+      uiText: "You've used your 5 sponsored transfers today.",
       remaining: 0,
       remainingAfterPayment: 0,
       estimatedFee: estimatedFeeUsdc,
@@ -408,7 +458,7 @@ export function checkGasCredits(gasCredits: GasCreditState): GasResult {
 
   return {
     feeMode: "sponsored",
-    uiText: "Gas covered by gas credit",
+    uiText: "Gas covered by sponsored transfer credit",
     remaining,
     remainingAfterPayment: remaining - 1,
     estimatedFee: estimatedFeeUsdc,

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { DetailList } from "../components";
+import { useProductState } from "../product-state";
 
 type ApiState<T> =
   | { status: "idle" }
@@ -20,6 +21,8 @@ type ExecuteResponse = {
   error?: string;
   approvalTxHash?: string | null;
   burnTxHash?: string;
+  requestedAmount?: { usdc?: string; baseUnits?: string };
+  forwardingMaxFee?: { usdc?: string; baseUnits?: string };
   estimatedRecipientAmount?: { usdc?: string; baseUnits?: string };
   message?: string;
 };
@@ -30,6 +33,7 @@ type TransferInputs = {
 };
 
 export default function CctpLabPage() {
+  const { gasCredits, remainingGasCredits, recordRealSponsoredExecution } = useProductState();
   const [amountUsdc, setAmountUsdc] = useState("1.00");
   const [solanaRecipientAddress, setSolanaRecipientAddress] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -38,7 +42,8 @@ export default function CctpLabPage() {
   const [preflightInputs, setPreflightInputs] = useState<TransferInputs | null>(null);
   const currentInputs = { amountUsdc, solanaRecipientAddress };
   const preflightReady = preflightState.status === "success" && inputsMatch(preflightInputs, currentInputs);
-  const canExecute = preflightReady && confirmed && executionState.status !== "loading";
+  const creditsAvailable = remainingGasCredits > 0;
+  const canExecute = preflightReady && confirmed && creditsAvailable && executionState.status !== "loading" && executionState.status !== "success";
 
   function updateAmountUsdc(value: string) {
     setAmountUsdc(value);
@@ -59,6 +64,7 @@ export default function CctpLabPage() {
 
   async function runPreflight(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setConfirmed(false);
     setExecutionState({ status: "idle" });
     setPreflightState({ status: "loading" });
     const requestInputs = { amountUsdc, solanaRecipientAddress };
@@ -83,6 +89,10 @@ export default function CctpLabPage() {
   }
 
   async function executeTransfer() {
+    if (!canExecute) {
+      return;
+    }
+
     setExecutionState({ status: "loading" });
 
     try {
@@ -102,6 +112,7 @@ export default function CctpLabPage() {
       }
 
       setExecutionState({ status: "success", data: payload });
+      recordRealSponsoredExecution();
     } catch (error) {
       setExecutionState({ status: "error", error: error instanceof Error ? error.message : "Unable to execute CCTP transfer." });
     }
@@ -116,6 +127,15 @@ export default function CctpLabPage() {
           <h2 id="cctp-lab-title">Real CCTP Testnet Route</h2>
           <p className="status-banner warning">Injective testnet USDC -&gt; Solana devnet USDC</p>
           <p className="status-banner warning">This uses a demo-funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
+          <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
+          <p className="status-banner warning">OmnisRouter sponsors source-chain gas for your first 5 real testnet transfers each day.</p>
+          <p className="status-banner warning">Circle forwarding fees may still reduce the amount received.</p>
+          {!creditsAvailable ? <p className="status-banner error">You've used your 5 sponsored transfers today.</p> : null}
+
+          <div className="option-grid" aria-label="Fee mode">
+            <div className="option-card selected">A. Send net amount: recipient receives amount after route fees.</div>
+            <div className="option-card">B. Exact receive mode: top up slightly so recipient receives the exact amount.</div>
+          </div>
 
           <form onSubmit={runPreflight}>
             <div className="form-grid">
@@ -134,7 +154,7 @@ export default function CctpLabPage() {
           </form>
 
           {preflightState.status === "error" ? <p className="status-banner error">{preflightState.error}</p> : null}
-          {preflightState.status === "success" ? <PreflightPanel preflight={preflightState.data} /> : null}
+          {preflightState.status === "success" ? <PreflightPanel creditsRemaining={remainingGasCredits} preflight={preflightState.data} /> : null}
         </div>
 
         <div className="dashboard-stack">
@@ -143,7 +163,7 @@ export default function CctpLabPage() {
             <h2>Testnet execution</h2>
             <label className="toggle-row cctp-confirm-row"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />I understand this will execute a real testnet CCTP transfer.</label>
             <div className="button-row cctp-action-row">
-              <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : "Execute Testnet Transfer"}</button>
+              <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : executionState.status === "success" ? "Testnet Transfer Executed" : "Execute Testnet Transfer"}</button>
             </div>
             {!preflightReady ? <p className="status-banner warning">Run preflight before execution.</p> : null}
             {executionState.status === "error" ? <p className="status-banner error">{executionState.error}</p> : null}
@@ -187,7 +207,7 @@ function CctpHero() {
   );
 }
 
-function PreflightPanel({ preflight }: { preflight: Record<string, unknown> }) {
+function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: number; preflight: Record<string, unknown> }) {
   return (
     <div className="cctp-result-panel">
       <p className="status-banner success">Preflight complete</p>
@@ -199,6 +219,8 @@ function PreflightPanel({ preflight }: { preflight: Record<string, unknown> }) {
         ["Requested amount", amount(preflight.requestedAmount)],
         ["Forwarding fee", amount(preflight.forwardingMaxFee)],
         ["Estimated recipient amount", amount(preflight.estimatedRecipientAmount)],
+        ["Source gas sponsor", "OmnisRouter"],
+        ["Credits remaining", String(creditsRemaining)],
         ["Approval needed", text(preflight.approvalNeeded)],
         ["Native INJ gas balance", gas(preflight.nativeInjGasBalance)],
         ["Solana recipient wallet", text(preflight.solanaRecipientWallet)],
@@ -216,7 +238,10 @@ function ExecutionPanel({ result }: { result: ExecuteResponse }) {
       <DetailList entries={[
         ["Approval tx", result.approvalTxHash ?? "Approval skipped"],
         ["Burn tx", result.burnTxHash ?? "Pending"],
+        ["Requested amount", amount(result.requestedAmount)],
+        ["Forwarding fee", amount(result.forwardingMaxFee)],
         ["Estimated recipient amount", result.estimatedRecipientAmount?.usdc ? `${result.estimatedRecipientAmount.usdc} USDC` : "Unknown"],
+        ["Source gas sponsor", "OmnisRouter"],
         ["Forwarding service", result.message ?? "Circle Forwarding Service handles Solana minting."],
       ]} />
     </div>

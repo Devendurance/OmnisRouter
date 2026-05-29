@@ -23,7 +23,7 @@ export function AppHero({ eyebrow, title, copy }: { eyebrow: string; title: Reac
         <strong>{route.route ?? String(route.destinationChain)}</strong>
         <small>{route.reason}</small>
         {route.supported ? <small>{route.routeId} / {route.protocol}</small> : null}
-        <small>{remainingGasCredits}/{gasCredits.monthlyLimit} gas credits available</small>
+        <small>{remainingGasCredits}/{gasCredits.dailyLimit} sponsored transfers today</small>
       </div>
     </section>
   );

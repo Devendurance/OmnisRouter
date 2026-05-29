@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AppHero, DetailList } from "../components";
 import { useInjectiveWallet } from "../InjectiveWalletProvider";
 import { useProductState } from "../product-state";
+import { RealCctpRoutePanel } from "../RealCctpRoutePanel";
 import { shortenAddress } from "../../router-simulator";
 
 export default function ApprovalPage() {
@@ -19,7 +20,7 @@ export default function ApprovalPage() {
   });
   const approvalChecksPass = route.supported && ruleResult.status !== "denied" && !paused;
   const canApprove = approvalChecksPass && sourceWallet.ready;
-  const statusText = paused ? "Agent spending is paused. Disable emergency pause to continue." : !route.supported || ruleResult.status === "denied" ? route.reason : ruleResult.status === "needs_approval" ? "Approval required" : "Ready for payment";
+  const statusText = paused ? "Agent spending is paused. Disable emergency pause to continue." : ruleResult.status === "denied" ? ruleResult.reasons.join(" ") : !route.supported ? route.reason : ruleResult.status === "needs_approval" ? "Approval required" : "Ready for payment";
 
   return (
     <>
@@ -30,7 +31,7 @@ export default function ApprovalPage() {
           <h2 id="approval-title">Payment approval</h2>
           <p className={`status-banner ${approvalChecksPass ? "success" : "error"}`}>{statusText}</p>
           {sourceWallet.message ? <p className={`status-banner ${sourceWallet.variant}`}>{sourceWallet.message}</p> : null}
-          <p className="status-banner warning">{connected ? `Solana wallet connected: ${shortenAddress(solanaAddress)}. ` : "Solana wallet disconnected. "}This approval only runs the simulator. Mock USDC balances update, but no real wallet funds move.</p>
+          <p className="status-banner warning">{connected ? `Solana wallet connected: ${shortenAddress(solanaAddress)}. ` : "Solana wallet disconnected. "}The simulated approval button only runs the simulator. Mock USDC balances update, but no real wallet funds move.</p>
           <p className="status-banner warning">Crypto transfers are irreversible. Confirm this recipient is correct.</p>
           {gas.feeMode === "sponsored" ? <p className="status-banner success">Gas credit applied: {gas.uiText}</p> : <p className="status-banner warning">Gas credits exhausted</p>}
           {gas.feeMode === "user_choice_required" ? <div className="option-grid"><button className={`option-card${feeChoice === "deduct_from_transfer" ? " selected" : ""}`} onClick={() => setFeeChoice("deduct_from_transfer")} type="button">A. Deduct estimated fee from transfer amount</button><button className={`option-card${feeChoice === "top_up_fee" ? " selected" : ""}`} onClick={() => setFeeChoice("top_up_fee")} type="button">B. Top up fee so recipient receives exact amount</button></div> : null}
@@ -43,6 +44,7 @@ export default function ApprovalPage() {
           </div>
           <div className="button-row">{canApprove ? <Link className="primary-button" href="/app/payment">I confirm and approve transfer</Link> : <button className="primary-button" disabled type="button">I confirm and approve transfer</button>}<Link className="secondary-button" href="/app/agent">Cancel</Link></div>
         </div>
+        <RealCctpRoutePanel />
       </section>
     </>
   );
