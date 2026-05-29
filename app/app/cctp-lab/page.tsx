@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { DetailList } from "../components";
 import { useProductState } from "../product-state";
 import { injectiveTestnetTxUrl, shortenHash } from "../../../lib/explorers";
+import type { CctpExecutionReceipt } from "../../router-simulator";
 
 type ApiState<T> =
   | { status: "idle" }
@@ -23,8 +24,12 @@ type ExecuteResponse = {
   approvalTxHash?: string | null;
   burnTxHash?: string;
   requestedAmount?: { usdc?: string; baseUnits?: string };
+  sourceUsdcBalance?: { usdc?: string; baseUnits?: string };
   forwardingMaxFee?: { usdc?: string; baseUnits?: string };
   estimatedRecipientAmount?: { usdc?: string; baseUnits?: string };
+  sourceEvmAddress?: string;
+  solanaRecipientWallet?: string;
+  solanaUsdcAta?: string;
   message?: string;
 };
 
@@ -34,7 +39,7 @@ type TransferInputs = {
 };
 
 export default function CctpLabPage() {
-  const { gasCredits, remainingGasCredits, recordRealSponsoredExecution } = useProductState();
+  const { gasCredits, recordCctpReceipt, recordRealSponsoredExecution, remainingGasCredits } = useProductState();
   const [amountUsdc, setAmountUsdc] = useState("1.00");
   const [solanaRecipientAddress, setSolanaRecipientAddress] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -114,6 +119,30 @@ export default function CctpLabPage() {
 
       setExecutionState({ status: "success", data: payload });
       recordRealSponsoredExecution();
+
+      if (payload.burnTxHash) {
+        const receipt: CctpExecutionReceipt = {
+          id: `cctp-${Date.now()}-${payload.burnTxHash.slice(2, 10)}`,
+          createdAt: new Date().toISOString(),
+          routeLabel: "Injective → Solana",
+          sourceChain: "Injective",
+          destinationChain: "Solana",
+          asset: "USDC",
+          requestedAmount: payload.requestedAmount?.usdc ?? amountUsdc,
+          forwardingFee: payload.forwardingMaxFee?.usdc ?? "Unknown",
+          estimatedRecipientAmount: payload.estimatedRecipientAmount?.usdc ?? "Unknown",
+          sourceGasSponsor: "OmnisRouter",
+          approvalTxHash: payload.approvalTxHash ?? null,
+          burnTxHash: payload.burnTxHash,
+          sourceEvmAddress: payload.sourceEvmAddress ?? "",
+          solanaRecipientWallet: payload.solanaRecipientWallet ?? solanaRecipientAddress,
+          solanaUsdcAta: payload.solanaUsdcAta ?? "",
+          status: "forwarding-submitted",
+          message: payload.message ?? "Circle Forwarding Service handles Solana minting.",
+        };
+
+        recordCctpReceipt(receipt);
+      }
     } catch (error) {
       setExecutionState({ status: "error", error: error instanceof Error ? error.message : "Unable to execute CCTP transfer." });
     }

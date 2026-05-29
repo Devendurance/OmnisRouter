@@ -110,6 +110,26 @@ export type PaymentExecution = {
   };
 };
 
+export type CctpExecutionReceipt = {
+  id: string;
+  createdAt: string;
+  routeLabel: string;
+  sourceChain: "Injective";
+  destinationChain: "Solana";
+  asset: "USDC";
+  requestedAmount: string;
+  forwardingFee: string;
+  estimatedRecipientAmount: string;
+  sourceGasSponsor: string;
+  approvalTxHash: string | null;
+  burnTxHash: string;
+  sourceEvmAddress: string;
+  solanaRecipientWallet: string;
+  solanaUsdcAta: string;
+  status: string;
+  message: string;
+};
+
 const base58Pattern = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const hexPattern = /^[0-9a-fA-F]+$/;
 

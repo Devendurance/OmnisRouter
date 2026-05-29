@@ -9,6 +9,7 @@ import {
   routeRegistry,
   simulatePaymentExecution,
   validateSpendingRules,
+  type CctpExecutionReceipt,
   type GasCreditState,
   type GasResult,
   type MockBalances,
@@ -65,6 +66,7 @@ type ProductState = {
   latestExecution: PaymentExecution | null;
   feeChoice: FeeChoice;
   paymentError: string | null;
+  realCctpReceipts: CctpExecutionReceipt[];
 };
 
 type ProductContextValue = ProductState & {
@@ -79,6 +81,7 @@ type ProductContextValue = ProductState & {
   setFeeChoice: (choice: FeeChoice) => void;
   simulatePayment: () => PaymentExecution | null;
   recordRealSponsoredExecution: () => void;
+  recordCctpReceipt: (receipt: CctpExecutionReceipt) => void;
   resetGasCredits: () => void;
   resetMockState: () => void;
 };
@@ -108,6 +111,7 @@ function createInitialState(): ProductState {
     latestExecution: null,
     feeChoice: "deduct_from_transfer",
     paymentError: null,
+    realCctpReceipts: [],
   };
 }
 
@@ -135,6 +139,7 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
           latestExecution: parsed.latestExecution ?? null,
           feeChoice: parsed.feeChoice ?? "deduct_from_transfer",
           paymentError: parsed.paymentError ?? null,
+          realCctpReceipts: normalizeCctpReceipts(parsed.realCctpReceipts),
         });
       }
     } finally {
@@ -269,6 +274,21 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
         paymentError: null,
       }));
     },
+    recordCctpReceipt(receipt) {
+      setState((current) => {
+        const alreadyStored = current.realCctpReceipts.some(
+          (existing) => existing.burnTxHash === receipt.burnTxHash,
+        );
+
+        if (alreadyStored) {
+          return current;
+        }
+
+        const updated = [receipt, ...current.realCctpReceipts].slice(0, 10);
+
+        return { ...current, realCctpReceipts: updated };
+      });
+    },
     resetGasCredits() {
       setState((current) => ({ ...current, gasCredits: withRemaining(0), paymentError: null }));
     },
@@ -379,4 +399,18 @@ function shortenWalletAddress(address: string): string {
   }
 
   return `${address.slice(0, 6)}...${address.slice(-6)}`;
+}
+
+function normalizeCctpReceipts(value: unknown): CctpExecutionReceipt[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (item): item is CctpExecutionReceipt =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as Record<string, unknown>).id === "string" &&
+      typeof (item as Record<string, unknown>).burnTxHash === "string",
+  ).slice(0, 10);
 }
