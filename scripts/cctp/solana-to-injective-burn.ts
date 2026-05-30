@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Connection, Keypair, PublicKey, sendAndConfirmTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import {
   prepareSolanaToInjectiveCctpTransfer,
   type SolanaToInjectiveCctpPreflight,
@@ -74,21 +74,63 @@ console.log(`Instructions: ${buildResult.transaction.instructions.length}`);
 console.log(`Required signers: ${buildResult.requiredSigners.map((s) => s.toBase58()).join(", ")}`);
 
 const tx = buildResult.transaction;
-tx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-tx.feePayer = sourceKeypair.publicKey;
 
 console.log("");
 console.log("About to send real Solana devnet CCTP burn transaction.");
 
-const signature = await sendAndConfirmTransaction(
-  connection,
-  tx,
-  [sourceKeypair, buildResult.messageSentEventDataKeypair],
-  { commitment: "confirmed" },
+const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+tx.recentBlockhash = blockhash;
+tx.feePayer = sourceKeypair.publicKey;
+
+const signature = await connection.sendTransaction(tx, [sourceKeypair, buildResult.messageSentEventDataKeypair], {
+  skipPreflight: false,
+  maxRetries: 5,
+});
+
+console.log(`Transaction sent: ${signature}`);
+
+const confirmation = await connection.confirmTransaction(
+  { signature, blockhash, lastValidBlockHeight },
+  "confirmed",
 );
 
+if (confirmation.value.err) {
+  throw new Error(
+    `Solana burn transaction was submitted but failed confirmation: ${JSON.stringify(confirmation.value.err)}`,
+  );
+}
+
+let fetched = false;
+
+for (let retry = 0; retry < 20; retry++) {
+  const txResult = await connection.getTransaction(signature, {
+    commitment: "confirmed",
+    maxSupportedTransactionVersion: 0,
+  });
+
+  if (txResult) {
+    fetched = true;
+
+    if (txResult.meta?.err) {
+      console.error("Transaction logs:");
+      for (const log of txResult.meta.logMessages ?? []) {
+        console.error(`  ${log}`);
+      }
+      throw new Error("Solana burn transaction landed but failed.");
+    }
+
+    break;
+  }
+
+  await new Promise((r) => setTimeout(r, 2000));
+}
+
+if (!fetched) {
+  throw new Error("Solana burn transaction was submitted but getTransaction returned null after 20 retries.");
+}
+
 console.log("");
-console.log("Burn submitted.");
+console.log("Burn confirmed.");
 console.log(`Burn tx signature: ${signature}`);
 console.log(`Explorer: ${SOLANA_DEVNET_EXPLORER_TX_URL.replace("{hash}", signature)}`);
 console.log(`Message sent event data: ${buildResult.messageSentEventDataPublicKey.toBase58()}`);

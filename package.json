@@ -14,7 +14,9 @@
     "cctp:fetch-solana-idls": "node --no-warnings --experimental-strip-types scripts/cctp/fetch-solana-cctp-idls.ts",
     "cctp:solana-to-injective:build-burn-tx": "node --no-warnings --experimental-strip-types scripts/cctp/solana-to-injective-build-burn-tx.ts",
     "cctp:solana-to-injective:burn": "node --no-warnings --experimental-strip-types scripts/cctp/solana-to-injective-burn.ts",
-    "cctp:solana-to-injective:inspect-remote-messengers": "node --no-warnings --experimental-strip-types scripts/cctp/inspect-solana-cctp-remote-messengers.ts"
+    "cctp:solana-to-injective:inspect-remote-messengers": "node --no-warnings --experimental-strip-types scripts/cctp/inspect-solana-cctp-remote-messengers.ts",
+    "cctp:solana-to-injective:poll-iris": "node --no-warnings --experimental-strip-types scripts/cctp/solana-to-injective-poll-iris.ts",
+    "cctp:solana-to-injective:relay": "node --no-warnings --experimental-strip-types scripts/cctp/solana-to-injective-relay.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

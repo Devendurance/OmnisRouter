@@ -1,0 +1,9 @@
+{
+  "solanaBurnTxHash": "2YZTMUAVyxCTseTAEfSpMH9iuY3KbwF9xFF2bjbSiSZSf5jMDSj64v2G7s3DMkbDoHMoU2qJoXCnbZKqujGNLgQj",
+  "injectiveRelayTxHash": "0xf1bb03caae02791be0f7835c42b7bbea232cbf7f6ac7a4db990251e8268c75af",
+  "receiptStatus": "success",
+  "blockNumber": "127921114",
+  "relayerAddress": "0x4E5124A80719c9C334936Cd924cB882bc234D72e",
+  "destinationDomain": 29,
+  "submittedAt": "2026-05-30T22:19:29.164Z"
+}
