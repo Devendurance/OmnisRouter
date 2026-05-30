@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { DetailList } from "./components";
 import { useProductState } from "./product-state";
@@ -90,7 +91,7 @@ export function RealCctpRoutePanel() {
       setPreflightState({ status: "success", data: payload.preflight });
     } catch (error) {
       setPreflightInputs(null);
-      setPreflightState({ status: "error", error: error instanceof Error ? error.message : "Unable to run CCTP preflight." });
+      setPreflightState({ status: "error", error: humanizeError(error, "Unable to complete route check.") });
     }
   }
 
@@ -144,7 +145,7 @@ export function RealCctpRoutePanel() {
         recordCctpReceipt(receipt);
       }
     } catch (error) {
-      setExecutionState({ status: "error", error: error instanceof Error ? error.message : "Unable to execute CCTP transfer." });
+      setExecutionState({ status: "error", error: humanizeError(error, "Transfer could not be completed. No receipt was recorded unless a burn transaction was submitted.") });
     }
   }
 
@@ -152,13 +153,11 @@ export function RealCctpRoutePanel() {
     <div className="card cctp-lab-card">
       <p className="eyebrow">Real route option</p>
       <h2>{realRouteDetected ? "Real CCTP Testnet Route Available" : "Real CCTP Testnet Route"}</h2>
-      {realRouteDetected ? <p className="status-banner success">OmnisRouter detected this as a Solana recipient address and found a real Injective -&gt; Solana USDC route.</p> : null}
-      {realRouteDetected ? <p className="status-banner warning">This route can execute a real testnet Injective USDC -&gt; Solana USDC transfer through Circle CCTP Forwarding Service.</p> : null}
-      <p className="status-banner warning">Safety note: This uses a demo-funded testnet executor wallet. Production version should use user wallet signing, auth, rate limits, and abuse protection.</p>
+      {realRouteDetected ? <p className="status-banner success">OmnisRouter detected a Solana recipient and found a real Injective &rarr; Solana USDC route.</p> : null}
+      <p className="status-banner warning">Safety note: This uses a demo-funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
       <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
-      <p className="status-banner warning">OmnisRouter sponsors source-chain gas for your first 5 real testnet transfers each day.</p>
-      <p className="status-banner warning">Circle forwarding fees may still reduce the amount received.</p>
-      {!creditsAvailable ? <p className="status-banner error">You've used your 5 sponsored transfers today.</p> : null}
+      <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
+      {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 5 sponsored testnet transfers. Try again tomorrow.</p> : null}
       {!realRouteDetected ? <p className="status-banner warning">Real execution currently supports Solana recipients through the Injective -&gt; Solana testnet USDC route.</p> : null}
       {executionInputsValid && !policyAllowsExecution ? <p className="status-banner error">Real execution is blocked by the current spending policy or emergency pause.</p> : null}
 
@@ -176,21 +175,21 @@ export function RealCctpRoutePanel() {
 
       <div className="button-row cctp-action-row">
         <button className="secondary-button" disabled={!eligible || preflightState.status === "loading"} onClick={runPreflight} type="button">
-          {preflightState.status === "loading" ? "Running preflight..." : "Run Real Route Preflight"}
+          {preflightState.status === "loading" ? "Running route check..." : "Run Route Check"}
         </button>
       </div>
 
       {preflightState.status === "error" ? <p className="status-banner error">{preflightState.error}</p> : null}
-      {preflightState.status === "success" && !preflightReady ? <p className="status-banner warning">Route details changed. Run preflight again before executing.</p> : null}
+      {preflightState.status === "success" && !preflightReady ? <p className="status-banner warning">Route details changed. Run a route check again before executing.</p> : null}
       {preflightState.status === "success" && preflightReady ? <PreflightPanel creditsRemaining={remainingGasCredits} preflight={preflightState.data} /> : null}
 
       {eligible ? (
         <>
           <label className="toggle-row cctp-confirm-row"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />I understand this executes a real testnet transfer using the demo executor wallet.</label>
           <div className="button-row cctp-action-row">
-            <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : executionState.status === "success" ? "Real Route Executed" : "Execute Real Testnet Route"}</button>
+            <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : executionState.status === "success" ? "Transfer Executed" : "Execute Real Testnet Transfer"}</button>
           </div>
-          {!preflightReady ? <p className="status-banner warning">Run a successful preflight before execution.</p> : null}
+          {!preflightReady ? <p className="status-banner warning">Run a route check before executing.</p> : null}
           {executionState.status === "error" ? <p className="status-banner error">{executionState.error}</p> : null}
           {executionState.status === "success" ? <ExecutionPanel result={executionState.data} /> : null}
         </>
@@ -203,10 +202,33 @@ function inputsMatch(preflightInputs: TransferInputs | null, currentInputs: Tran
   return preflightInputs?.amountUsdc === currentInputs.amountUsdc && preflightInputs.solanaRecipientAddress === currentInputs.solanaRecipientAddress;
 }
 
+function humanizeError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+
+  if (lower.includes("api is disabled") || lower.includes("execution api")) {
+    return "Real execution is currently disabled in this environment.";
+  }
+
+  if (lower.includes("credits exhausted") || lower.includes("daily sponsored")) {
+    return "You've used today's 5 sponsored testnet transfers. Try again tomorrow.";
+  }
+
+  if (lower.includes("fee") || lower.includes("circle")) {
+    return "Circle fee estimate could not be reached. Check your connection and try again.";
+  }
+
+  if (lower.includes("invalid solana") || lower.includes("solana recipient")) {
+    return "This does not look like a valid Solana recipient address.";
+  }
+
+  return fallback;
+}
+
 function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: number; preflight: Record<string, unknown> }) {
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Preflight complete</p>
+      <p className="status-banner success">Route check complete</p>
       <DetailList split entries={[
         ["Requested amount", amount(preflight.requestedAmount)],
         ["Source USDC balance", amount(preflight.sourceUsdcBalance)],
@@ -226,17 +248,21 @@ function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: num
 function ExecutionPanel({ result }: { result: ExecuteResponse }) {
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Execution submitted</p>
+      <p className="status-banner success">Burn submitted on Injective</p>
+      <p className="status-banner success">Circle Forwarding Service is handling Solana minting. This can take around 30&ndash;90 seconds.</p>
+      <p className="status-banner success">Check the receipt page for transaction proof.</p>
       <DetailList entries={[
         ["Approval tx", txLink(result.approvalTxHash, "Approval skipped")],
-        ["Burn/depositForBurnWithHook tx", txLink(result.burnTxHash, "Pending")],
-        ["Forwarding service", result.message ?? "Circle Forwarding Service handles Solana minting."],
+        ["Burn tx", txLink(result.burnTxHash, "Pending")],
       ]} />
       <CostBreakdown
         forwardingMaxFee={result.forwardingMaxFee}
         estimatedRecipientAmount={result.estimatedRecipientAmount}
         creditsRemaining={0}
       />
+      <div className="button-row cctp-action-row">
+        <Link className="secondary-button" href="/app/receipt">View Receipt</Link>
+      </div>
     </div>
   );
 }

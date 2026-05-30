@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { DetailList } from "../components";
 import { useProductState } from "../product-state";
@@ -90,7 +91,7 @@ export default function CctpLabPage() {
       setPreflightInputs(requestInputs);
       setPreflightState({ status: "success", data: payload.preflight });
     } catch (error) {
-      setPreflightState({ status: "error", error: error instanceof Error ? error.message : "Unable to run CCTP preflight." });
+      setPreflightState({ status: "error", error: humanizeError(error, "Unable to complete route check.") });
     }
   }
 
@@ -144,7 +145,7 @@ export default function CctpLabPage() {
         recordCctpReceipt(receipt);
       }
     } catch (error) {
-      setExecutionState({ status: "error", error: error instanceof Error ? error.message : "Unable to execute CCTP transfer." });
+      setExecutionState({ status: "error", error: humanizeError(error, "Transfer could not be completed. No receipt was recorded unless a burn transaction was submitted.") });
     }
   }
 
@@ -158,9 +159,8 @@ export default function CctpLabPage() {
           <p className="status-banner warning">Injective testnet USDC -&gt; Solana devnet USDC</p>
           <p className="status-banner warning">This uses a demo-funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
           <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
-          <p className="status-banner warning">OmnisRouter sponsors source-chain gas for your first 5 real testnet transfers each day.</p>
-          <p className="status-banner warning">Circle forwarding fees may still reduce the amount received.</p>
-          {!creditsAvailable ? <p className="status-banner error">You've used your 5 sponsored transfers today.</p> : null}
+          <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
+          {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 5 sponsored testnet transfers. Try again tomorrow.</p> : null}
 
           <div className="option-grid" aria-label="Fee mode">
             <div className="option-card selected">A. Send net amount: recipient receives amount after route fees.</div>
@@ -179,7 +179,7 @@ export default function CctpLabPage() {
               </label>
             </div>
             <div className="button-row cctp-action-row">
-              <button className="primary-button" disabled={preflightState.status === "loading"} type="submit">{preflightState.status === "loading" ? "Running preflight..." : "Run Preflight"}</button>
+              <button className="primary-button" disabled={preflightState.status === "loading"} type="submit">{preflightState.status === "loading" ? "Running route check..." : "Run Route Check"}</button>
             </div>
           </form>
 
@@ -193,9 +193,9 @@ export default function CctpLabPage() {
             <h2>Testnet execution</h2>
             <label className="toggle-row cctp-confirm-row"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />I understand this will execute a real testnet CCTP transfer.</label>
             <div className="button-row cctp-action-row">
-              <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : executionState.status === "success" ? "Testnet Transfer Executed" : "Execute Testnet Transfer"}</button>
+              <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : executionState.status === "success" ? "Transfer Executed" : "Execute Real Testnet Transfer"}</button>
             </div>
-            {!preflightReady ? <p className="status-banner warning">Run preflight before execution.</p> : null}
+            {!preflightReady ? <p className="status-banner warning">Run a route check before executing.</p> : null}
             {executionState.status === "error" ? <p className="status-banner error">{executionState.error}</p> : null}
             {executionState.status === "success" ? <ExecutionPanel result={executionState.data} /> : null}
           </div>
@@ -219,6 +219,29 @@ function inputsMatch(preflightInputs: TransferInputs | null, currentInputs: Tran
   return preflightInputs?.amountUsdc === currentInputs.amountUsdc && preflightInputs.solanaRecipientAddress === currentInputs.solanaRecipientAddress;
 }
 
+function humanizeError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+
+  if (lower.includes("api is disabled") || lower.includes("execution api")) {
+    return "Real execution is currently disabled in this environment.";
+  }
+
+  if (lower.includes("credits exhausted") || lower.includes("daily sponsored")) {
+    return "You've used today's 5 sponsored testnet transfers. Try again tomorrow.";
+  }
+
+  if (lower.includes("fee") || lower.includes("circle")) {
+    return "Circle fee estimate could not be reached. Check your connection and try again.";
+  }
+
+  if (lower.includes("invalid solana") || lower.includes("solana recipient")) {
+    return "This does not look like a valid Solana recipient address.";
+  }
+
+  return fallback;
+}
+
 function CctpHero() {
   return (
     <section className="hero-panel cctp-hero-panel">
@@ -240,7 +263,7 @@ function CctpHero() {
 function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: number; preflight: Record<string, unknown> }) {
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Preflight complete</p>
+      <p className="status-banner success">Route check complete</p>
       <DetailList split entries={[
         ["Source chain", text(preflight.sourceChain)],
         ["Destination chain", text(preflight.destinationChain)],
@@ -265,17 +288,21 @@ function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: num
 function ExecutionPanel({ result }: { result: ExecuteResponse }) {
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Execution submitted</p>
+      <p className="status-banner success">Burn submitted on Injective</p>
+      <p className="status-banner success">Circle Forwarding Service is handling Solana minting. This can take around 30&ndash;90 seconds.</p>
+      <p className="status-banner success">Check the receipt page for transaction proof.</p>
       <DetailList entries={[
         ["Approval tx", txLink(result.approvalTxHash, "Approval skipped")],
         ["Burn tx", txLink(result.burnTxHash, "Pending")],
-        ["Forwarding service", result.message ?? "Circle Forwarding Service handles Solana minting."],
       ]} />
       <CostBreakdown
         forwardingMaxFee={result.forwardingMaxFee}
         estimatedRecipientAmount={result.estimatedRecipientAmount}
         creditsRemaining={0}
       />
+      <div className="button-row cctp-action-row">
+        <Link className="secondary-button" href="/app/receipt">View Receipt</Link>
+      </div>
     </div>
   );
 }

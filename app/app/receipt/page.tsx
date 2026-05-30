@@ -24,6 +24,14 @@ function formatTime(iso: string): string {
   }
 }
 
+function humanizeStatus(status: string): string {
+  if (status === "forwarding-submitted") {
+    return "Forwarding submitted";
+  }
+
+  return status.replace(/-/g, " ");
+}
+
 export default function ReceiptPage() {
   const { balances, latestExecution, realCctpReceipts } = useProductState();
 
@@ -66,7 +74,7 @@ export default function ReceiptPage() {
                   <p className="eyebrow">{receipt.routeLabel}</p>
                   <DetailList split entries={[
                     ["Created", formatTime(receipt.createdAt)],
-                    ["Status", receipt.status],
+                    ["Status", humanizeStatus(receipt.status)],
                     ["Requested amount", `${receipt.requestedAmount} ${receipt.asset}`],
                     ["Forwarding fee", `${receipt.forwardingFee} ${receipt.asset}`],
                     ["Estimated received", `${receipt.estimatedRecipientAmount} ${receipt.asset}`],
@@ -76,8 +84,10 @@ export default function ReceiptPage() {
                     ["Solana USDC ATA", receipt.solanaUsdcAta],
                     ["Approval tx", txLink(receipt.approvalTxHash, "Approval skipped")],
                     ["Burn tx", txLink(receipt.burnTxHash, "Pending")],
-                    ["Message", receipt.message],
                   ]} />
+                  <p className="status-banner success">
+                    Solana mint is handled by Circle&apos;s Forwarding Service. OmnisRouter stores the Injective approval and burn transaction proof.
+                  </p>
                 </div>
               ))}
             </div>
