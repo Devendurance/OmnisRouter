@@ -1,0 +1,83 @@
+import { PublicKey } from "@solana/web3.js";
+import { NextResponse } from "next/server";
+
+type PreflightRequestBody = {
+  amountUsdc?: unknown;
+  solanaSourceAddress?: unknown;
+  injectiveRecipientAddress?: unknown;
+};
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json() as PreflightRequestBody;
+    const validation = validateBody(body);
+
+    if (!validation.ok) {
+      return NextResponse.json({ ok: false, error: validation.error }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      route: "solana-to-injective",
+      sourceChain: "Solana devnet",
+      destinationChain: "Injective testnet",
+      executionMode: "manual-relay",
+      phases: [
+        "Solana USDC burn",
+        "Circle Iris attestation",
+        "Injective receiveMessage relay",
+        "Receipt",
+      ],
+      message: "Solana to Injective route is available as a staged CCTP V2 manual relay.",
+    });
+  } catch (error) {
+    return NextResponse.json({
+      ok: false,
+      error: error instanceof Error ? error.message : "Unable to validate Solana to Injective CCTP preflight.",
+    }, { status: 500 });
+  }
+}
+
+function validateBody(body: PreflightRequestBody) {
+  if (typeof body.amountUsdc !== "string" || !body.amountUsdc.trim()) {
+    return { ok: false as const, error: "amountUsdc is required." };
+  }
+
+  if (typeof body.solanaSourceAddress !== "string" || !body.solanaSourceAddress.trim()) {
+    return { ok: false as const, error: "solanaSourceAddress is required." };
+  }
+
+  if (typeof body.injectiveRecipientAddress !== "string" || !body.injectiveRecipientAddress.trim()) {
+    return { ok: false as const, error: "injectiveRecipientAddress is required." };
+  }
+
+  const amountUsdc = body.amountUsdc.trim();
+
+  if (!/^\d+(\.\d{1,6})?$/.test(amountUsdc)) {
+    return { ok: false as const, error: "amountUsdc must be a positive USDC amount with up to 6 decimals." };
+  }
+
+  if (Number(amountUsdc) <= 0) {
+    return { ok: false as const, error: "amountUsdc must be greater than 0." };
+  }
+
+  const solanaSourceAddress = body.solanaSourceAddress.trim();
+
+  try {
+    const publicKey = new PublicKey(solanaSourceAddress);
+
+    if (publicKey.toBase58() !== solanaSourceAddress) {
+      return { ok: false as const, error: "solanaSourceAddress must be a valid Solana base58 address." };
+    }
+  } catch {
+    return { ok: false as const, error: "solanaSourceAddress must be a valid Solana base58 address." };
+  }
+
+  const injectiveRecipientAddress = body.injectiveRecipientAddress.trim();
+
+  if (!/^inj/i.test(injectiveRecipientAddress)) {
+    return { ok: false as const, error: "injectiveRecipientAddress must be a valid Injective Bech32 address." };
+  }
+
+  return { ok: true as const, amountUsdc, solanaSourceAddress, injectiveRecipientAddress };
+}

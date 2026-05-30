@@ -204,6 +204,17 @@ export default function CctpLabPage() {
           </div>
 
           <div className="card cctp-lab-card">
+            <p className="eyebrow">Reverse route</p>
+            <h2>Solana &rarr; Injective</h2>
+            <p className="status-banner success">Solana devnet USDC &rarr; Injective testnet USDC</p>
+            <p className="status-banner warning">This route uses a staged CCTP V2 manual relay.</p>
+            <p className="status-banner success">Phases: Solana burn &rarr; Iris attestation &rarr; Injective relay &rarr; Receipt</p>
+            <div className="button-row cctp-action-row">
+              <button className="primary-button" disabled type="button">Execution wiring next</button>
+            </div>
+          </div>
+
+          <div className="card cctp-lab-card">
             <p className="eyebrow">Scope guard</p>
             <DetailList entries={[
               ["Mode", "Real testnet CCTP only"],

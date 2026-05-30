@@ -61,12 +61,12 @@ export type RouteDefinition = {
 export type RealRouteCandidate = {
   id: string;
   asset: "USDC";
-  sourceChain: "Injective";
-  destinationChain: "Solana";
-  protocol: "Circle CCTP Forwarding Service";
+  sourceChain: ChainName;
+  destinationChain: ChainName;
+  protocol: string;
   executionMode: "real-testnet";
-  sourceAsset: "Injective testnet USDC";
-  destinationAsset: "Solana devnet USDC";
+  sourceAsset: string;
+  destinationAsset: string;
 };
 
 export type RouteResult = {
@@ -172,6 +172,17 @@ const injectiveToSolanaRealCctpCandidate: RealRouteCandidate = {
   executionMode: "real-testnet",
   sourceAsset: "Injective testnet USDC",
   destinationAsset: "Solana devnet USDC",
+};
+
+const solanaToInjectiveRealCctpCandidate: RealRouteCandidate = {
+  id: "solana-devnet-usdc-injective-testnet-usdc-cctp-manual-relay",
+  asset: "USDC",
+  sourceChain: "Solana",
+  destinationChain: "Injective",
+  protocol: "Circle CCTP V2 Manual Relay",
+  executionMode: "real-testnet",
+  sourceAsset: "Solana devnet USDC",
+  destinationAsset: "Injective testnet USDC",
 };
 
 export function validateRecipientAddress(address: string): RecipientAddressValidation {
@@ -411,16 +422,24 @@ function getRealCctpCandidate(
   recipientValidation: RecipientAddressValidation,
   requestedSource: ChainName | undefined,
 ): RealRouteCandidate | undefined {
-  const sourceDoesNotConflict = !requestedSource || requestedSource === "Injective";
+  if (intent.asset.toUpperCase() !== "USDC" || intent.amount <= 0 || !recipientValidation.isValid) {
+    return undefined;
+  }
 
-  if (
-    intent.asset.toUpperCase() === "USDC" &&
-    intent.amount > 0 &&
-    recipientValidation.isValid &&
-    recipientValidation.chainType === "Solana" &&
-    sourceDoesNotConflict
-  ) {
-    return injectiveToSolanaRealCctpCandidate;
+  if (recipientValidation.chainType === "Solana") {
+    const sourceDoesNotConflict = !requestedSource || requestedSource === "Injective";
+
+    if (sourceDoesNotConflict) {
+      return injectiveToSolanaRealCctpCandidate;
+    }
+  }
+
+  if (recipientValidation.chainType === "Injective") {
+    const sourceDoesNotConflict = !requestedSource || requestedSource === "Solana";
+
+    if (sourceDoesNotConflict) {
+      return solanaToInjectiveRealCctpCandidate;
+    }
   }
 
   return undefined;

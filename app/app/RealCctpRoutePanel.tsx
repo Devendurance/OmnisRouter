@@ -60,6 +60,10 @@ export function RealCctpRoutePanel() {
     intent.amount <= rules.dailyTransferLimit &&
     rules.allowedDestinationChains.includes("Solana");
   const eligible = executionInputsValid && policyAllowsExecution;
+  const solanaToInjectiveDetected =
+    realRouteDetected &&
+    route.realRouteCandidate?.sourceChain === "Solana" &&
+    route.realRouteCandidate?.destinationChain === "Injective";
   const [confirmed, setConfirmed] = useState(false);
   const [preflightState, setPreflightState] = useState<ApiState<Record<string, unknown>>>({ status: "idle" });
   const [executionState, setExecutionState] = useState<ApiState<ExecuteResponse>>({ status: "idle" });
@@ -156,12 +160,15 @@ export function RealCctpRoutePanel() {
     <div className="card cctp-lab-card">
       <p className="eyebrow">Real route option</p>
       <h2>{realRouteDetected ? "Real CCTP Testnet Route Available" : "Real CCTP Testnet Route"}</h2>
-      {realRouteDetected ? <p className="status-banner success">OmnisRouter detected a Solana recipient and found a real Injective &rarr; Solana USDC route.</p> : null}
+      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Injective" ? <p className="status-banner success">OmnisRouter detected a Solana recipient and found a real Injective &rarr; Solana USDC route.</p> : null}
+      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner success">OmnisRouter detected an Injective recipient and found a real Solana &rarr; Injective USDC route.</p> : null}
+      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner warning">This route uses a staged CCTP V2 manual relay.</p> : null}
+      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <div className="cctp-result-panel"><p className="status-banner success">Phases: Solana burn &rarr; Iris attestation &rarr; Injective relay &rarr; Receipt</p></div> : null}
       <p className="status-banner warning">Safety note: This uses a demo-funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
       <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
       <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
       {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 5 sponsored testnet transfers. Try again tomorrow.</p> : null}
-      {!realRouteDetected ? <p className="status-banner warning">Real execution currently supports Solana recipients through the Injective -&gt; Solana testnet USDC route.</p> : null}
+      {!realRouteDetected ? <p className="status-banner warning">Real execution currently supports Solana and Injective recipients on the testnet USDC CCTP routes.</p> : null}
       {executionInputsValid && !policyAllowsExecution ? <p className="status-banner error">Real execution is blocked by the current spending policy or emergency pause.</p> : null}
 
       <div className="option-grid" aria-label="Fee mode">
@@ -195,6 +202,15 @@ export function RealCctpRoutePanel() {
           {!preflightReady ? <p className="status-banner warning">Run a route check before executing.</p> : null}
           {executionState.status === "error" ? <p className="status-banner error">{executionState.error}</p> : null}
           {executionState.status === "success" ? <ExecutionPanel result={executionState.data} /> : null}
+        </>
+      ) : null}
+
+      {solanaToInjectiveDetected ? (
+        <>
+          <div className="button-row cctp-action-row">
+            <button className="primary-button" disabled type="button">Execution wiring next</button>
+          </div>
+          <p className="status-banner warning">Solana &rarr; Injective CCTP V2 manual relay is available as a staged route. Execution is not yet wired to the app UI.</p>
         </>
       ) : null}
     </div>
