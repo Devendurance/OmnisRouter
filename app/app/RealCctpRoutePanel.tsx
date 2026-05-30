@@ -31,6 +31,9 @@ type ExecuteResponse = {
   sourceEvmAddress?: string;
   solanaRecipientWallet?: string;
   solanaUsdcAta?: string;
+  isManualFeeFallback?: boolean;
+  maxFeeSource?: string;
+  fallbackFeeWarning?: string;
   message?: string;
 };
 
@@ -240,6 +243,7 @@ function PreflightPanel({ creditsRemaining, preflight }: { creditsRemaining: num
         forwardingMaxFee={preflight.forwardingMaxFee}
         estimatedRecipientAmount={preflight.estimatedRecipientAmount}
         creditsRemaining={creditsRemaining}
+        isManualFeeFallback={Boolean(preflight.isManualFeeFallback)}
       />
     </div>
   );
@@ -259,6 +263,7 @@ function ExecutionPanel({ result }: { result: ExecuteResponse }) {
         forwardingMaxFee={result.forwardingMaxFee}
         estimatedRecipientAmount={result.estimatedRecipientAmount}
         creditsRemaining={0}
+        isManualFeeFallback={Boolean(result.isManualFeeFallback)}
       />
       <div className="button-row cctp-action-row">
         <Link className="secondary-button" href="/app/receipt">View Receipt</Link>
@@ -329,13 +334,18 @@ function CostBreakdown({
   creditsRemaining,
   estimatedRecipientAmount,
   forwardingMaxFee,
+  isManualFeeFallback = false,
 }: {
   creditsRemaining: number;
   estimatedRecipientAmount: unknown;
   forwardingMaxFee: unknown;
+  isManualFeeFallback?: boolean;
 }) {
   const feeUsdc = usdcOnly(forwardingMaxFee);
   const receivedUsdc = usdcOnly(estimatedRecipientAmount);
+  const feeSourceEntry: [string, React.ReactNode] = isManualFeeFallback
+    ? ["Fee source", "Manual fallback"]
+    : ["Fee source", "Circle fee API"];
 
   return (
     <div className="cost-breakdown" aria-label="Transfer cost breakdown">
@@ -343,7 +353,13 @@ function CostBreakdown({
       <p className="status-banner success">
         OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is protocol-level and is deducted from the transferred USDC amount.
       </p>
+      {isManualFeeFallback ? (
+        <p className="status-banner warning">
+          Circle fee API was unavailable, so OmnisRouter used the configured manual max fee fallback.
+        </p>
+      ) : null}
       <DetailList entries={[
+        feeSourceEntry,
         ["Source-chain INJ gas", "Paid by OmnisRouter (sponsored by gas credits)"],
         ["Circle CCTP forwarding fee", feeUsdc ? `Deducted from transfer — ${feeUsdc} USDC` : "Unavailable"],
         ["Estimated received amount", receivedUsdc ? `${receivedUsdc} USDC` : "Unavailable"],

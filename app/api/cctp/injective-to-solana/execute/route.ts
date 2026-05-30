@@ -10,6 +10,7 @@ import {
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_TESTNET_CCTP";
 const SERVER_EXECUTION_CONFIRMATION = "YES";
+const CONFIRM_MANUAL_MAX_FEE = "YES";
 const DAILY_SPONSORED_EXECUTION_LIMIT = 5;
 const ROUTE_LIMITER_NAME = "injective-to-solana-cctp";
 const DAILY_LIMIT_EXHAUSTED_ERROR = "Daily sponsored gas credits exhausted. Try again tomorrow or use paid mode when available.";
@@ -52,6 +53,15 @@ export async function POST(request: Request) {
       amountUsdc: validation.amountUsdc,
       solanaRecipientAddress: validation.solanaRecipientAddress,
     });
+
+    if (preflight.isManualFeeFallback && process.env.CONFIRM_MANUAL_MAX_FEE !== CONFIRM_MANUAL_MAX_FEE) {
+      return NextResponse.json({
+        ok: false,
+        error: "Manual fee fallback is active but CONFIRM_MANUAL_MAX_FEE is not set to YES.",
+        isManualFeeFallback: true,
+        fallbackFeeWarning: preflight.fallbackFeeWarning,
+      }, { status: 400 });
+    }
 
     const limiterKey = getDailyLimiterKey(request, ROUTE_LIMITER_NAME);
 
@@ -106,6 +116,9 @@ export async function POST(request: Request) {
       solanaRecipientWallet: result.solanaRecipientAddress,
       solanaUsdcAta: result.solanaUsdcAta,
       message: "Circle Forwarding Service handles Solana minting. Refresh Solana USDC balance after ~30-90 seconds.",
+      isManualFeeFallback: preflight.isManualFeeFallback,
+      fallbackFeeWarning: preflight.fallbackFeeWarning,
+      maxFeeSource: preflight.isManualFeeFallback ? "manual-env-fallback" : "circle-api",
     }));
   } catch (error) {
     if (reservedLimiterKey && !executionSubmitted) {

@@ -17,6 +17,8 @@ const INJECTIVE_TESTNET_EVM_RPC_URL = "https://k8s.testnet.json-rpc.injective.ne
 const INJECTIVE_TESTNET_EVM_CHAIN_ID = 1439;
 const USDC_DECIMALS = 6;
 const MIN_FINALITY_THRESHOLD = 2000;
+const MAX_FEE_RETRY_COUNT = 3;
+const MAX_FEE_RETRY_DELAY_MS = 1000;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as const;
 
 const CCTP_DOMAINS = {
@@ -119,6 +121,8 @@ export type InjectiveToSolanaCctpPreflight = {
   };
   forwardingFeeWarning?: string;
   forwardingFeeExplanation?: string;
+  isManualFeeFallback: boolean;
+  fallbackFeeWarning?: string;
 };
 
 type ForwardingFeeEstimate = {
@@ -180,10 +184,43 @@ export async function prepareInjectiveToSolanaCctpTransfer(
   const mintRecipient = encodeSolanaAtaAsBytes32(input.solanaRecipientAddress) as Hex;
   const hookData = buildForwardHookDataWithAtaCreation(input.solanaRecipientAddress) as Hex;
   const feeEstimate = await getForwardingFeeEstimate({ includeRecipientSetup: true });
-  const maxFeeValue = hasForwardingMaxFee(feeEstimate) ? feeEstimate.maxFee : undefined;
+  let maxFeeValue: string | undefined = hasForwardingMaxFee(feeEstimate) ? feeEstimate.maxFee : undefined;
+
+  let isManualFeeFallback = false;
+  let fallbackFeeWarning: string | undefined;
 
   if (!maxFeeValue) {
-    throw new Error("Unable to compute maxFee from Circle forwarding fee estimate.");
+    const manualFeeUsdc = process.env.CCTP_MAX_FEE_USDC?.trim();
+
+    if (manualFeeUsdc) {
+      try {
+        const manualFeeBaseUnits = parseUnits(manualFeeUsdc, USDC_DECIMALS);
+
+        if (manualFeeBaseUnits <= BigInt(0)) {
+          throw new Error("CCTP_MAX_FEE_USDC must be greater than 0.");
+        }
+
+        maxFeeValue = manualFeeBaseUnits.toString();
+        isManualFeeFallback = true;
+        fallbackFeeWarning = `Circle fee API could not be reached after ${MAX_FEE_RETRY_COUNT + 1} attempts. Using manual fallback CCTP_MAX_FEE_USDC=${manualFeeUsdc} USDC as maxFee estimate.`;
+      } catch (parseError) {
+        throw new Error(
+          `CCTP_MAX_FEE_USDC is set but invalid: ${
+            parseError instanceof Error ? parseError.message : "could not parse as USDC amount"
+          }.`,
+        );
+      }
+    }
+  }
+
+  if (!maxFeeValue) {
+    throw new Error(
+      "Circle fee estimate unavailable. Set CCTP_MAX_FEE_USDC in environment to use a manual fee estimate, or check your connection and try again.",
+    );
+  }
+
+  if (fallbackFeeWarning && typeof feeEstimate.warning === "undefined") {
+    feeEstimate.warning = fallbackFeeWarning;
   }
 
   const maxFee = BigInt(maxFeeValue);
@@ -240,6 +277,8 @@ export async function prepareInjectiveToSolanaCctpTransfer(
     },
     forwardingFeeWarning: feeEstimate.warning,
     forwardingFeeExplanation: feeEstimate.explanation,
+    isManualFeeFallback,
+    fallbackFeeWarning,
   };
 }
 
@@ -493,10 +532,10 @@ async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boole
     : CIRCLE_SANDBOX_FORWARD_FEE_URL;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithRetry(url, MAX_FEE_RETRY_COUNT, MAX_FEE_RETRY_DELAY_MS);
 
     if (!response.ok) {
-      return { warning: `Circle fee API returned ${response.status} ${response.statusText}.` };
+      return { warning: `Circle fee API returned ${response.status} ${response.statusText} after ${MAX_FEE_RETRY_COUNT + 1} attempts.` };
     }
 
     const data = await response.json() as unknown;
@@ -508,10 +547,28 @@ async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boole
   } catch (error) {
     return {
       warning: error instanceof Error
-        ? `Circle fee API request failed: ${error.message}`
-        : "Circle fee API request failed.",
+        ? `Circle fee API request failed after ${MAX_FEE_RETRY_COUNT + 1} attempts: ${error.message}`
+        : `Circle fee API request failed after ${MAX_FEE_RETRY_COUNT + 1} attempts.`,
     };
   }
+}
+
+async function fetchWithRetry(url: string, maxRetries: number, delayMs: number): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetch(url);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 function extractForwardingFees(data: unknown): ForwardingFeeEstimate {

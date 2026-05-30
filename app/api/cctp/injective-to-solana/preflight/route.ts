@@ -66,6 +66,9 @@ export async function POST(request: Request) {
         approvalSpender: preflight.contracts.tokenMessengerV2,
         burnTarget: preflight.contracts.tokenMessengerV2,
         minFinalityThreshold: preflight.contracts.minFinalityThreshold,
+        isManualFeeFallback: preflight.isManualFeeFallback,
+        fallbackFeeWarning: preflight.fallbackFeeWarning,
+        maxFeeSource: preflight.isManualFeeFallback ? "manual-env-fallback" : "circle-api",
         warnings: [
           preflight.forwardingFeeWarning,
           preflight.nativeGasBalance.error ? `Native INJ gas balance unavailable: ${preflight.nativeGasBalance.error}` : undefined,
