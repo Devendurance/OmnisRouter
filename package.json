@@ -11,7 +11,8 @@
     "cctp:test-forwarding-utils": "node --no-warnings --experimental-strip-types scripts/cctp/test-forwarding-utils.ts",
     "cctp:injective-to-solana": "node --no-warnings --experimental-strip-types scripts/cctp/injective-to-solana-forwarding.ts",
     "cctp:solana-to-injective:dry-run": "node --no-warnings --experimental-strip-types scripts/cctp/solana-to-injective-dry-run.ts",
-    "cctp:fetch-solana-idls": "node --no-warnings --experimental-strip-types scripts/cctp/fetch-solana-cctp-idls.ts"
+    "cctp:fetch-solana-idls": "node --no-warnings --experimental-strip-types scripts/cctp/fetch-solana-cctp-idls.ts",
+    "cctp:solana-to-injective:build-burn-tx": "node --no-warnings --experimental-strip-types scripts/cctp/solana-to-injective-build-burn-tx.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
