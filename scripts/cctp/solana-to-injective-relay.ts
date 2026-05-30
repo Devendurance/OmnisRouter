@@ -9,6 +9,8 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
+loadDotEnv();
+
 const INJECTIVE_TESTNET_EVM_RPC_URL = "https://k8s.testnet.json-rpc.injective.network/";
 const INJECTIVE_TESTNET_EVM_CHAIN_ID = 1439;
 const MESSAGE_TRANSMITTER_V2 = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275";
@@ -146,3 +148,34 @@ writeFileSync(RECEIPT_FILE, JSON.stringify(receiptPayload, null, 2), "utf8");
 console.log(`Receipt saved to ${RECEIPT_FILE}`);
 console.log("");
 console.log("Relay complete. Solana -> Injective CCTP V2 manual relay finished.");
+
+function loadDotEnv() {
+  const envPath = resolve(process.cwd(), ".env");
+
+  if (!existsSync(envPath)) {
+    return;
+  }
+
+  const envFile = readFileSync(envPath, "utf8");
+
+  for (const line of envFile.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const equalsIndex = trimmed.indexOf("=");
+
+    if (equalsIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, equalsIndex).trim();
+    const value = trimmed.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
