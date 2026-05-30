@@ -42,6 +42,7 @@ export type BurnTxBuildParams = {
 
 export type BurnTxBuildResult = {
   transaction: Transaction;
+  messageSentEventDataKeypair: Keypair;
   messageSentEventDataPublicKey: PublicKey;
   messageSentEventDataSecretKeyBytes: Uint8Array;
   requiredSigners: PublicKey[];
@@ -134,10 +135,27 @@ export async function buildSolanaDepositForBurnTransaction(
   const domainBytes = Buffer.alloc(4);
   domainBytes.writeUInt32LE(destinationDomain, 0);
 
-  const [remoteTokenMessengerPda] = PublicKey.findProgramAddressSync(
+  const [derivedRemoteTokenMessengerPda] = PublicKey.findProgramAddressSync(
     [Buffer.from("remote_token_messenger"), domainBytes],
     programId,
   );
+
+  console.log(`  old derived remote_token_messenger PDA: ${derivedRemoteTokenMessengerPda.toBase58()}`);
+
+  const allRemoteTokenMessengers = await tokenMessengerMinterProgram.account.remoteTokenMessenger.all();
+  const target = allRemoteTokenMessengers.find(
+    (entry) => (entry.account.domain as number) === destinationDomain,
+  );
+
+  if (!target) {
+    throw new Error(
+      `No initialized Circle remoteTokenMessenger found for destination domain ${destinationDomain}.`,
+    );
+  }
+
+  const remoteTokenMessengerPda = target.publicKey;
+
+  console.log(`  selected remote_token_messenger: ${remoteTokenMessengerPda.toBase58()} (domain ${target.account.domain})`);
 
   const messageSentEventDataKeypair = Keypair.generate();
 
@@ -195,6 +213,7 @@ export async function buildSolanaDepositForBurnTransaction(
 
   return {
     transaction: tx,
+    messageSentEventDataKeypair,
     messageSentEventDataPublicKey: messageSentEventDataKeypair.publicKey,
     messageSentEventDataSecretKeyBytes: messageSentEventDataKeypair.secretKey,
     requiredSigners: [ownerPubkey, messageSentEventDataKeypair.publicKey],
