@@ -160,6 +160,7 @@ export default function CctpLabPage() {
           <p className="eyebrow">Forwarding service route</p>
           <h2 id="cctp-lab-title">Real CCTP Testnet Route</h2>
           <p className="status-banner warning">Injective testnet USDC -&gt; Solana devnet USDC</p>
+          <p className="status-banner warning">Testnet execution mode: OmnisRouter uses a funded server-side Solana execution wallet to demonstrate real CCTP routing. Users provide the recipient and intent; OmnisRouter handles burn, attestation, relay, and receipt generation.</p>
           <p className="status-banner warning">This uses a funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
           <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
           <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>

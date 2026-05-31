@@ -31,6 +31,7 @@ export default function ApprovalPage() {
           <h2 id="approval-title">Payment approval</h2>
           <p className={`status-banner ${approvalChecksPass ? "success" : "error"}`}>{statusText}</p>
           {sourceWallet.message ? <p className={`status-banner ${sourceWallet.variant}`}>{sourceWallet.message}</p> : null}
+          <p className="status-banner warning">Testnet execution mode: OmnisRouter uses a funded server-side Solana execution wallet to demonstrate real CCTP routing. Users provide the recipient and intent; OmnisRouter handles burn, attestation, relay, and receipt generation.</p>
           <p className="status-banner warning">{connected ? `Solana wallet connected: ${shortenAddress(solanaAddress)}.` : "Solana wallet disconnected."}</p>
           <p className="status-banner warning">Crypto transfers are irreversible. Confirm this recipient is correct.</p>
           {gas.feeMode === "sponsored" ? <p className="status-banner success">Gas credit applied: {gas.uiText}</p> : <p className="status-banner warning">Gas credits exhausted</p>}
