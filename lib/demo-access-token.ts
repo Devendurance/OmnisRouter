@@ -37,16 +37,25 @@ export async function verifyDemoAccessToken(token: string | undefined, secret: s
 
 async function signPayload(payload: string, secret: string) {
   const encoder = new TextEncoder();
+  const secretBytes = toArrayBuffer(encoder.encode(secret));
+  const payloadBytes = toArrayBuffer(encoder.encode(payload));
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(secret),
+    secretBytes,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  const signature = await crypto.subtle.sign("HMAC", key, payloadBytes);
 
   return base64UrlEncode(new Uint8Array(signature));
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+
+  return buffer;
 }
 
 function base64UrlEncode(bytes: Uint8Array) {
