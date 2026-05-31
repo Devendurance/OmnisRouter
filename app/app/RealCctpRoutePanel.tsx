@@ -37,6 +37,20 @@ type ExecuteResponse = {
   message?: string;
 };
 
+type SolanaToInjectiveExecuteResponse = {
+  ok: boolean;
+  error?: string;
+  burnTxHash?: string;
+  relayTxHash?: string | null;
+  amountUsdc?: string;
+  expectedRecipientAmount?: { usdc?: string; baseUnits?: string };
+  debug?: {
+    serverSolanaSourceAddress?: string;
+    usedSolanaSourceAddress?: string;
+  };
+  message?: string;
+};
+
 type TransferInputs = {
   amountUsdc: string;
   solanaRecipientAddress: string;
@@ -68,10 +82,87 @@ export function RealCctpRoutePanel() {
   const [preflightState, setPreflightState] = useState<ApiState<Record<string, unknown>>>({ status: "idle" });
   const [executionState, setExecutionState] = useState<ApiState<ExecuteResponse>>({ status: "idle" });
   const [preflightInputs, setPreflightInputs] = useState<TransferInputs | null>(null);
+  const [solanaToInjectiveConfirmed, setSolanaToInjectiveConfirmed] = useState(false);
+  const [solanaToInjectiveExecutionState, setSolanaToInjectiveExecutionState] = useState<ApiState<SolanaToInjectiveExecuteResponse>>({ status: "idle" });
   const currentInputs = { amountUsdc, solanaRecipientAddress };
   const preflightReady = preflightState.status === "success" && inputsMatch(preflightInputs, currentInputs);
   const creditsAvailable = remainingGasCredits > 0;
   const canExecute = eligible && preflightReady && confirmed && creditsAvailable && executionState.status !== "loading" && executionState.status !== "success";
+  const solanaToInjectiveCanExecute =
+    solanaToInjectiveDetected && solanaToInjectiveConfirmed && creditsAvailable &&
+    solanaToInjectiveExecutionState.status !== "loading" &&
+    solanaToInjectiveExecutionState.status !== "success" &&
+    policyAllowsExecution &&
+    rules.allowedDestinationChains.includes("Injective");
+
+  async function executeSolanaToInjectiveTransfer() {
+    if (!solanaToInjectiveCanExecute) return;
+
+    setSolanaToInjectiveExecutionState({ status: "loading" });
+
+    const requestBody = {
+      amountUsdc,
+      injectiveRecipientAddress: intent.recipientAddress,
+      confirmExecution: "EXECUTE_SOLANA_TO_INJECTIVE" as const,
+    };
+
+    console.log("Solana -> Injective execute payload:", {
+      amountUsdc: requestBody.amountUsdc,
+      injectiveRecipientAddress: requestBody.injectiveRecipientAddress,
+      direction: "Solana → Injective",
+    });
+
+    try {
+      const response = await fetch("/api/cctp/solana-to-injective/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const payload = await response.json() as SolanaToInjectiveExecuteResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `API returned status ${response.status}`);
+      }
+
+      setSolanaToInjectiveExecutionState({ status: "success", data: payload });
+      recordRealSponsoredExecution();
+
+      if (payload.burnTxHash) {
+        const receipt: CctpExecutionReceipt = {
+          id: `cctp-s2i-${Date.now()}-${payload.burnTxHash.slice(0, 10)}`,
+          createdAt: new Date().toISOString(),
+          routeLabel: "Solana → Injective",
+          sourceChain: "Solana",
+          destinationChain: "Injective",
+          asset: "USDC",
+          requestedAmount: payload.amountUsdc ?? amountUsdc,
+          forwardingFee: "0",
+          estimatedRecipientAmount: payload.expectedRecipientAmount?.usdc ?? amountUsdc,
+          sourceGasSponsor: "OmnisRouter",
+          approvalTxHash: null,
+          burnTxHash: payload.burnTxHash,
+          relayTxHash: payload.relayTxHash ?? null,
+          sourceEvmAddress: "",
+          solanaSourceAddress: payload.debug?.usedSolanaSourceAddress ?? payload.debug?.serverSolanaSourceAddress ?? "",
+          serverSolanaSourceAddress: payload.debug?.serverSolanaSourceAddress ?? "",
+          usedSolanaSourceAddress: payload.debug?.usedSolanaSourceAddress ?? payload.debug?.serverSolanaSourceAddress ?? "",
+          solanaRecipientWallet: "",
+          injectiveRecipientAddress: intent.recipientAddress,
+          solanaUsdcAta: "",
+          status: payload.relayTxHash ? "completed" : "burn-submitted",
+          message: payload.message ?? "Solana burn submitted. Iris attestation received. Injective relay completed.",
+        };
+
+        recordCctpReceipt(receipt);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      setSolanaToInjectiveExecutionState({
+        status: "error",
+        error: message || "Solana to Injective transfer could not be completed.",
+      });
+    }
+  }
 
   async function runPreflight() {
     if (!eligible) {
@@ -179,7 +270,7 @@ export function RealCctpRoutePanel() {
       <DetailList entries={[
         ["Current route", route.realRouteCandidate ? `${route.realRouteCandidate.sourceChain} -> ${route.realRouteCandidate.destinationChain}` : route.route ?? `${route.sourceChain ?? "Unresolved"} -> ${route.destinationChain}`],
         ["Amount", amountUsdc ? `${amountUsdc} ${intent.asset}` : "Unavailable"],
-        ["Solana recipient", solanaRecipientAddress || "No recipient detected"],
+        [solanaToInjectiveDetected ? "Injective recipient" : "Solana recipient", solanaRecipientAddress || "No recipient detected"],
         ["Protocol", route.realRouteCandidate?.protocol ?? route.protocol ?? "Unavailable"],
       ]} />
 
@@ -207,10 +298,47 @@ export function RealCctpRoutePanel() {
 
       {solanaToInjectiveDetected ? (
         <>
+          <label className="toggle-row cctp-confirm-row">
+            <input checked={solanaToInjectiveConfirmed} onChange={(event) => setSolanaToInjectiveConfirmed(event.target.checked)} type="checkbox" />
+            I understand this executes a real testnet Solana to Injective CCTP V2 manual relay.
+          </label>
           <div className="button-row cctp-action-row">
-            <button className="primary-button" disabled type="button">Execution wiring next</button>
+            <button
+              className="primary-button"
+              disabled={!solanaToInjectiveCanExecute}
+              onClick={executeSolanaToInjectiveTransfer}
+              type="button"
+            >
+              {solanaToInjectiveExecutionState.status === "loading"
+                ? "Executing..."
+                : solanaToInjectiveExecutionState.status === "success"
+                ? "Transfer Complete"
+                : "Execute Solana → Injective Route"}
+            </button>
           </div>
-          <p className="status-banner warning">Solana &rarr; Injective CCTP V2 manual relay is available as a staged route. Execution is not yet wired to the app UI.</p>
+          {solanaToInjectiveExecutionState.status === "error" ? (
+            <p className="status-banner error">{solanaToInjectiveExecutionState.error}</p>
+          ) : null}
+          {solanaToInjectiveExecutionState.status === "success" ? (
+            <div className="cctp-result-panel">
+              <p className="status-banner success">Transfer complete</p>
+              <p className="status-banner success">Phases: Solana burn → Iris attestation → Injective relay → Complete</p>
+              <DetailList entries={[
+                ["Burn tx", (() => {
+                  const hash = solanaToInjectiveExecutionState.data?.burnTxHash;
+                  return hash ? <a href={injectiveTestnetTxUrl(hash)} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a> : "Pending";
+                })()],
+                ["Relay tx", (() => {
+                  const hash = solanaToInjectiveExecutionState.data?.relayTxHash;
+                  return hash ? <a href={injectiveTestnetTxUrl(hash)} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a> : "Pending";
+                })()],
+                ["Message", solanaToInjectiveExecutionState.data?.message ?? "Complete."],
+              ]} />
+              <div className="button-row cctp-action-row">
+                <Link className="secondary-button" href="/app/receipt">View Receipt</Link>
+              </div>
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>

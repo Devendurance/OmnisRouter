@@ -114,8 +114,8 @@ export type CctpExecutionReceipt = {
   id: string;
   createdAt: string;
   routeLabel: string;
-  sourceChain: "Injective";
-  destinationChain: "Solana";
+  sourceChain: string;
+  destinationChain: string;
   asset: "USDC";
   requestedAmount: string;
   forwardingFee: string;
@@ -123,8 +123,13 @@ export type CctpExecutionReceipt = {
   sourceGasSponsor: string;
   approvalTxHash: string | null;
   burnTxHash: string;
+  relayTxHash?: string | null;
   sourceEvmAddress: string;
+  solanaSourceAddress?: string;
+  serverSolanaSourceAddress?: string;
+  usedSolanaSourceAddress?: string;
   solanaRecipientWallet: string;
+  injectiveRecipientAddress?: string;
   solanaUsdcAta: string;
   status: string;
   message: string;
