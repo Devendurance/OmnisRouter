@@ -11,6 +11,7 @@ import {
   reserveSponsoredGasCredit,
   rollbackSponsoredGasCredit,
 } from "../../../../../lib/server/gas-credit-limiter";
+import { persistOmnisReceiptBestEffort, withoutUndefined } from "../../../../../lib/server/omnis-receipts";
 
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_SOLANA_TO_INJECTIVE";
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     burnTxHash = result.burnTxHash;
 
     stage = "response building";
-    return NextResponse.json(toJsonSafe({
+    const responseBody = toJsonSafe({
       ok: true,
       route: "solana-to-injective",
       burnTxHash: result.burnTxHash,
@@ -82,7 +83,37 @@ export async function POST(request: Request) {
       },
       debug: validation.debug,
       message: "Solana burn confirmed. Iris attestation received. Injective relay completed.",
-    }));
+    });
+
+    await persistOmnisReceiptBestEffort({
+      amountUsdc: validation.amountUsdc,
+      burnTxHash: result.burnTxHash,
+      destinationChain: "Injective",
+      estimatedRecipientAmountUsdc: formatUnits(result.expectedRecipientAmount, USDC_DECIMALS),
+      forwardingFeeUsdc: "0",
+      injectiveRecipientAddress: validation.injectiveRecipientAddress,
+      message: responseBody.message,
+      rawReceipt: withoutUndefined({
+        ok: responseBody.ok,
+        route: responseBody.route,
+        burnTxHash: responseBody.burnTxHash,
+        relayTxHash: responseBody.relayTxHash,
+        amountUsdc: responseBody.amountUsdc,
+        sourceChain: responseBody.sourceChain,
+        destinationChain: responseBody.destinationChain,
+        expectedRecipientAmount: responseBody.expectedRecipientAmount,
+        solanaSourceAddress: validation.serverSolanaSourceAddress,
+        injectiveRecipientAddress: validation.injectiveRecipientAddress,
+        message: responseBody.message,
+      }),
+      relayTxHash: result.receiveTxHash,
+      route: "solana-to-injective",
+      solanaSourceAddress: validation.serverSolanaSourceAddress,
+      sourceChain: "Solana",
+      status: "completed",
+    });
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     if (reservedLimiterKey && !executionSubmitted) {
       rollbackSponsoredGasCredit(reservedLimiterKey);

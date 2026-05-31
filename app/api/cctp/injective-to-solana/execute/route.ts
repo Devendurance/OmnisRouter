@@ -12,6 +12,7 @@ import {
   reserveSponsoredGasCredit,
   rollbackSponsoredGasCredit,
 } from "../../../../../lib/server/gas-credit-limiter";
+import { persistOmnisReceiptBestEffort, withoutUndefined } from "../../../../../lib/server/omnis-receipts";
 
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_TESTNET_CCTP";
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
     executionSubmitted = true;
 
     stage = "response building";
-    return NextResponse.json(toJsonSafe({
+    const responseBody = toJsonSafe({
       ok: true,
       approvalTxHash: result.approvalTxHash ?? null,
       burnTxHash: result.burnTxHash,
@@ -115,7 +116,26 @@ export async function POST(request: Request) {
       isManualFeeFallback: preflight.isManualFeeFallback,
       fallbackFeeWarning: preflight.fallbackFeeWarning,
       maxFeeSource: preflight.isManualFeeFallback ? "manual-env-fallback" : "circle-api",
-    }));
+    });
+
+    await persistOmnisReceiptBestEffort({
+      amountUsdc: preflight.amountUsdc,
+      approvalTxHash: result.approvalTxHash ?? null,
+      burnTxHash: result.burnTxHash,
+      destinationChain: "Solana",
+      estimatedRecipientAmountUsdc: formatUsdc(result.expectedRecipientAmount),
+      forwardingFeeUsdc: formatUsdc(preflight.maxFee),
+      message: responseBody.message,
+      rawReceipt: withoutUndefined(responseBody),
+      route: "injective-to-solana",
+      solanaRecipientWallet: result.solanaRecipientAddress,
+      solanaUsdcAta: result.solanaUsdcAta,
+      sourceChain: "Injective",
+      sourceEvmAddress: preflight.sourceAddress,
+      status: "forwarding-submitted",
+    });
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     if (reservedLimiterKey && !executionSubmitted) {
       rollbackSponsoredGasCredit(reservedLimiterKey);
