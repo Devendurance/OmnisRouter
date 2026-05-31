@@ -381,6 +381,22 @@ export function resolvePaymentRoute(
     };
   }
 
+  if (realRouteCandidate) {
+    return {
+      supported: true,
+      recommended: true,
+      sourceChain: realRouteCandidate.sourceChain,
+      destinationChain: realRouteCandidate.destinationChain,
+      recipientValidation,
+      route: `${realRouteCandidate.sourceChain} -> ${realRouteCandidate.destinationChain}`,
+      routeId: realRouteCandidate.id,
+      protocol: realRouteCandidate.protocol,
+      destinationMintMode: realRouteCandidate.destinationAsset,
+      reason: `Real testnet ${realRouteCandidate.protocol} route available.`,
+      realRouteCandidate,
+    };
+  }
+
   const candidateRoutes = supportedRoutes.filter(
     (route) =>
       route.asset === intent.asset &&
@@ -400,7 +416,7 @@ export function resolvePaymentRoute(
       destinationChain,
       recipientValidation,
       reason: candidateRoutes.length === 0
-        ? "No simulated USDC CCTP route is enabled for this destination in the MVP."
+        ? "No USDC CCTP route is enabled for this destination in the MVP."
         : `No enabled source chain has enough ${intent.asset} balance for this route.`,
       realRouteCandidate,
     };
@@ -493,7 +509,7 @@ export function checkGasCredits(gasCredits: GasCreditState): GasResult {
   if (remaining <= 0) {
     return {
       feeMode: "user_choice_required",
-      uiText: "You've used your 5 sponsored transfers today.",
+      uiText: "You've used your 10 sponsored transfers today.",
       remaining: 0,
       remainingAfterPayment: 0,
       estimatedFee: estimatedFeeUsdc,

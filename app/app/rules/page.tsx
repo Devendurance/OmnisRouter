@@ -12,7 +12,7 @@ export default function RulesPage() {
 
   return (
     <>
-      <AppHero eyebrow="Rules page" title={<>Deterministic spending <em>controls.</em></>} copy="These saved controls are persisted locally and used by the simulator before approval and payment execution." />
+      <AppHero eyebrow="Rules page" title={<>Deterministic spending <em>controls.</em></>} copy="These saved controls are persisted locally and used before approval and payment execution." />
       <section className="content-grid" aria-labelledby="rules-title">
         <RulesForm key={JSON.stringify(rules)} rules={rules} saveRules={saveRules} />
       </section>
@@ -32,7 +32,7 @@ function RulesForm({ rules, saveRules }: { rules: SpendingRules; saveRules: (rul
 
   return (
     <div className="card">
-          <p className="eyebrow">Mock rule set</p>
+          <p className="eyebrow">Rule set</p>
           <h2 id="rules-title">Spending controls</h2>
           {saved ? <p className="status-banner success">Rules saved</p> : null}
           <form onSubmit={submitRules}>

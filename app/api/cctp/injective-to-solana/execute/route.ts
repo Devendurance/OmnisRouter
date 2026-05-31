@@ -6,22 +6,17 @@ import {
   executeInjectiveToSolanaCctpTransfer,
   prepareInjectiveToSolanaCctpTransfer,
 } from "../../../../../lib/server/cctp/injective-to-solana";
+import {
+  DAILY_SPONSORED_GAS_CREDIT_EXHAUSTED_ERROR,
+  getRequestIp,
+  reserveSponsoredGasCredit,
+  rollbackSponsoredGasCredit,
+} from "../../../../../lib/server/gas-credit-limiter";
 
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_TESTNET_CCTP";
 const SERVER_EXECUTION_CONFIRMATION = "YES";
 const CONFIRM_MANUAL_MAX_FEE = "YES";
-const DAILY_SPONSORED_EXECUTION_LIMIT = 5;
-const ROUTE_LIMITER_NAME = "injective-to-solana-cctp";
-const DAILY_LIMIT_EXHAUSTED_ERROR = "Daily sponsored gas credits exhausted. Try again tomorrow or use paid mode when available.";
-
-type DailyLimiterEntry = {
-  dateKey: string;
-  successfulExecutions: number;
-};
-
-// MVP in-memory limiter. Production should use Redis/database-backed rate limiting per authenticated user/wallet.
-const dailyExecutionLimiter = new Map<string, DailyLimiterEntry>();
 
 type ExecuteRequestBody = {
   amountUsdc?: unknown;
@@ -63,13 +58,14 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const limiterKey = getDailyLimiterKey(request, ROUTE_LIMITER_NAME);
+    const limiterUserKey = preflight.sourceAddress || getRequestIp(request);
+    const limiterReservation = reserveSponsoredGasCredit(limiterUserKey);
 
-    if (!reserveSponsoredExecutionCredit(limiterKey)) {
-      return NextResponse.json({ ok: false, error: DAILY_LIMIT_EXHAUSTED_ERROR }, { status: 429 });
+    if (!limiterReservation.ok) {
+      return NextResponse.json({ ok: false, error: DAILY_SPONSORED_GAS_CREDIT_EXHAUSTED_ERROR }, { status: 429 });
     }
 
-    reservedLimiterKey = limiterKey;
+    reservedLimiterKey = limiterReservation.storageKey;
 
     stage = "execution";
     const result = await executeInjectiveToSolanaCctpTransfer({
@@ -122,7 +118,7 @@ export async function POST(request: Request) {
     }));
   } catch (error) {
     if (reservedLimiterKey && !executionSubmitted) {
-      rollbackSponsoredExecutionCredit(reservedLimiterKey);
+      rollbackSponsoredGasCredit(reservedLimiterKey);
     }
 
     const serializedError = serializeCctpError(error);
@@ -180,59 +176,6 @@ function validateBody(body: ExecuteRequestBody) {
 
 function formatUsdc(value: bigint) {
   return formatUnits(value, USDC_DECIMALS);
-}
-
-function getDailyLimiterKey(request: Request, routeName: string) {
-  return `${getRequestIp(request)}:${routeName}`;
-}
-
-function getRequestIp(request: Request) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip")?.trim();
-
-  return forwardedFor || realIp || "unknown-ip";
-}
-
-function reserveSponsoredExecutionCredit(key: string) {
-  const entry = getDailyLimiterEntry(key);
-
-  if (entry.successfulExecutions >= DAILY_SPONSORED_EXECUTION_LIMIT) {
-    return false;
-  }
-
-  dailyExecutionLimiter.set(key, {
-    ...entry,
-    successfulExecutions: entry.successfulExecutions + 1,
-  });
-
-  return true;
-}
-
-function rollbackSponsoredExecutionCredit(key: string) {
-  const entry = getDailyLimiterEntry(key);
-
-  dailyExecutionLimiter.set(key, {
-    ...entry,
-    successfulExecutions: Math.max(entry.successfulExecutions - 1, 0),
-  });
-}
-
-function getDailyLimiterEntry(key: string) {
-  const dateKey = getUtcDateKey();
-  const existing = dailyExecutionLimiter.get(key);
-
-  if (existing?.dateKey === dateKey) {
-    return existing;
-  }
-
-  const freshEntry = { dateKey, successfulExecutions: 0 };
-  dailyExecutionLimiter.set(key, freshEntry);
-
-  return freshEntry;
-}
-
-function getUtcDateKey() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function logExecutionError({ error, failedStage }: { error: SerializedCctpError; failedStage: string }) {

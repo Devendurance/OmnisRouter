@@ -1,6 +1,6 @@
 "use client";
 
-import { AppHero, DetailList, humanize } from "../components";
+import { AppHero, DetailList } from "../components";
 import { useProductState } from "../product-state";
 import { injectiveTestnetTxUrl, shortenHash } from "../../../lib/explorers";
 import type { ReactNode } from "react";
@@ -139,40 +139,18 @@ function realReceiptNote(receipt: CctpExecutionReceipt) {
 }
 
 export default function ReceiptPage() {
-  const { balances, latestExecution, realCctpReceipts } = useProductState();
+  const { realCctpReceipts } = useProductState();
 
   return (
     <>
-      <AppHero eyebrow="Receipt" title={<>Payment <em>receipts.</em></>} copy="Simulated and real CCTP execution receipts persisted locally." />
-
-      {!latestExecution && realCctpReceipts.length === 0 ? (
-        <section className="content-grid" aria-labelledby="receipt-title">
-          <div className="card receipt-card">
-            <p className="status-banner warning">No payment receipts yet. Run a simulated payment or execute a real CCTP transfer first.</p>
-          </div>
-        </section>
-      ) : null}
-
-      {latestExecution ? (
-        <section className="content-grid" aria-labelledby="receipt-title">
-          <div className="card receipt-card">
-            <p className="eyebrow">Audit log</p>
-            <h2 id="receipt-title">Mock payment receipt</h2>
-            <DetailList split entries={[
-              ...Object.entries(latestExecution.receipt).map(([key, value]) => [humanize(key), value] as [string, string]),
-              ["Current Solana USDC", balances.Solana.USDC.toFixed(2)],
-              ["Current Injective USDC", balances.Injective.USDC.toFixed(2)],
-            ]} />
-          </div>
-        </section>
-      ) : null}
+      <AppHero eyebrow="Receipt" title={<>Payment <em>receipts.</em></>} copy="CCTP execution receipts persisted locally." />
 
       <section className="content-grid" aria-labelledby="real-receipts-title">
         <div className="card receipt-card">
-          <p className="eyebrow">Real receipts</p>
-          <h2 id="real-receipts-title">Real CCTP Receipts</h2>
+          <p className="eyebrow">Receipts</p>
+          <h2 id="real-receipts-title">CCTP Receipts</h2>
           {realCctpReceipts.length === 0 ? (
-            <p className="status-banner warning">No real CCTP receipts yet.</p>
+            <p className="status-banner warning">No real receipts yet. Execute a testnet route to generate one.</p>
           ) : (
             <div className="dashboard-stack">
               {realCctpReceipts.map((receipt) => (

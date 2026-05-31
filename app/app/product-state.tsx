@@ -21,7 +21,7 @@ import {
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "omnis-router-product-state-v2";
-const DAILY_GAS_CREDIT_LIMIT = 5;
+const DAILY_GAS_CREDIT_LIMIT = 10;
 
 export const defaultCommand = "send 40 USDC to inj1router9xk";
 

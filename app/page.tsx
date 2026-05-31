@@ -45,7 +45,7 @@ export default function Home() {
 
       <section className="stats-strip" aria-label="Product stats">
         <div className="stat-item"><div className="stat-number"><em>6</em> steps</div><div className="stat-label">From intent to receipt</div></div>
-        <div className="stat-item"><div className="stat-number"><em>20</em> credits</div><div className="stat-label">Sponsored gas per month</div></div>
+        <div className="stat-item"><div className="stat-number"><em>10</em> credits</div><div className="stat-label">Sponsored gas per day</div></div>
         <div className="stat-item"><div className="stat-number">Zero<em>.</em></div><div className="stat-label">Blind autonomous spending</div></div>
       </section>
 
@@ -77,12 +77,12 @@ export default function Home() {
           <div className="features-grid">
             {[
               ["Deterministic spending rules", "Set max transfers, daily caps, approval thresholds, destination chains, and emergency pause. Rules run in code, not AI guesswork."],
-              ["Sponsored gas credits", "Mock monthly gas credits show how payments can proceed without users managing destination-chain gas."],
+              ["Sponsored gas credits", "10 daily sponsored gas credits show how payments can proceed without users managing destination-chain gas."],
               ["CCTP route transparency", "Plain-English explanations show the route before approval so users understand the transfer path."],
-              ["Full payment audit log", "Execution steps and receipt fields make the simulated transfer easy to inspect."],
+              ["Full payment audit log", "Execution steps and receipt fields make the testnet transfer easy to inspect."],
             ].map(([title, desc]) => <article className="feature-card" key={title}><div className="feature-icon">◆</div><h3 className="feature-title">{title}</h3><p className="feature-desc">{desc}</p></article>)}
           </div>
-          <div className="gas-demo"><div className="gas-header"><span className="gas-title">Sponsored gas credits</span><span className="gas-count">20 / 20 available</span></div><div className="gas-track"><div className="gas-fill" /></div><div className="gas-label">Mock mode · Current transfer: sponsored</div></div>
+          <div className="gas-demo"><div className="gas-header"><span className="gas-title">Sponsored gas credits</span><span className="gas-count">10 / 10 available today</span></div><div className="gas-track"><div className="gas-fill" /></div><div className="gas-label">Testnet mode · Current transfer: sponsored</div></div>
         </div>
       </section>
 
@@ -93,7 +93,7 @@ export default function Home() {
           <p className="section-copy">Type a payment intent. OmnisRouter checks everything, explains the route and rules in plain English, then waits for explicit approval.</p>
           <div className="demo-grid">
             <div className="agent-mock"><div className="agent-header"><div className="agent-dots"><span className="agent-dot r" /><span className="agent-dot y" /><span className="agent-dot g" /></div><span className="agent-label">OmnisRouter · Agent Command</span></div><div className="agent-body"><div className="msg-user">Send 40 USDC from Solana to this Injective address inj1router...9xk</div><div className="msg-agent">I found a supported mock route for this payment.<div className="msg-route">Source: Solana USDC<br />Destination: Injective USDC<br />Rail: CCTP standard transfer<br />Rule check: Approval required &gt; 25 USDC<br />Gas: Sponsored credit available</div><Link className="msg-approve" href="/app/approval">Approve payment →</Link></div></div></div>
-            <div className="rules-demo"><div className="rules-demo-title">Spending rules</div>{[["Max transfer", "100 USDC"], ["Daily cap", "250 USDC"], ["Approval above", "25 USDC"], ["Destination", "Injective"], ["Gas credits", "20 / mo"]].map(([name, value]) => <div className="rule-row" key={name}><span className="rule-name">{name}</span><span className="rule-val">{value}</span></div>)}<p className="rules-note">Rules run in code · not AI inference</p></div>
+            <div className="rules-demo"><div className="rules-demo-title">Spending rules</div>{[["Max transfer", "100 USDC"], ["Daily cap", "250 USDC"], ["Approval above", "25 USDC"], ["Destination", "Injective"], ["Gas credits", "10 / day"]].map(([name, value]) => <div className="rule-row" key={name}><span className="rule-name">{name}</span><span className="rule-val">{value}</span></div>)}<p className="rules-note">Rules run in code · not AI inference</p></div>
           </div>
         </div>
       </section>

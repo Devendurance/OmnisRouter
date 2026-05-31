@@ -160,10 +160,10 @@ export default function CctpLabPage() {
           <p className="eyebrow">Forwarding service route</p>
           <h2 id="cctp-lab-title">Real CCTP Testnet Route</h2>
           <p className="status-banner warning">Injective testnet USDC -&gt; Solana devnet USDC</p>
-          <p className="status-banner warning">This uses a demo-funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
+          <p className="status-banner warning">This uses a funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
           <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
           <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
-          {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 5 sponsored testnet transfers. Try again tomorrow.</p> : null}
+          {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 10 sponsored testnet transfers. Try again tomorrow.</p> : null}
 
           <div className="option-grid" aria-label="Fee mode">
             <div className="option-card selected">A. Send net amount: recipient receives amount after route fees.</div>
@@ -218,7 +218,7 @@ export default function CctpLabPage() {
               ["Mode", "Real testnet CCTP only"],
               ["Source", "Injective testnet executor wallet"],
               ["Destination", "Solana devnet recipient ATA"],
-              ["Mock flow", "Unchanged and still separate"],
+              ["App flow", "Unchanged and still separate"],
             ]} />
           </div>
         </div>
@@ -240,7 +240,7 @@ function humanizeError(error: unknown, fallback: string): string {
   }
 
   if (lower.includes("credits exhausted") || lower.includes("daily sponsored")) {
-    return "You've used today's 5 sponsored testnet transfers. Try again tomorrow.";
+    return "You've used today's 10 sponsored testnet transfers. Try again tomorrow.";
   }
 
   if (lower.includes("fee") || lower.includes("circle")) {
@@ -260,7 +260,7 @@ function CctpHero() {
       <div>
         <p className="eyebrow">CCTP lab</p>
         <h1>Real CCTP <em>Testnet Route.</em></h1>
-        <p className="hero-copy">A server-side hackathon lab for the real Injective testnet to Solana devnet forwarding flow. The mock agent remains separate.</p>
+        <p className="hero-copy">A server-side hackathon lab for the real Injective testnet to Solana devnet forwarding flow.</p>
       </div>
       <div className="signal-card" aria-label="CCTP route summary">
         <span>Route</span>

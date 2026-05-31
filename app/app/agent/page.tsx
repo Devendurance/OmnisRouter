@@ -22,7 +22,7 @@ export default function AgentPage() {
           <h2 id="agent-title">Agent command</h2>
           <label className="command-label" htmlFor="payment-command">Payment command</label>
           <textarea id="payment-command" value={command} onChange={(event) => setCommand(event.target.value)} rows={5} />
-          <p className="status-banner warning">{connected ? `Solana wallet connected: ${shortenAddress(solanaAddress)}. ` : "Solana wallet disconnected. "}USDC balances and route execution are simulated; no real funds move.</p>
+          <p className="status-banner warning">{connected ? `Solana wallet connected: ${shortenAddress(solanaAddress)}.` : "Solana wallet disconnected."}</p>
           {validation.isValid ? <p className="status-banner success">Valid recipient address · Detected chain type: {validation.chainType} · {shortenAddress(validation.normalizedAddress)}</p> : <p className="status-banner warning">Invalid address warning: {validation.error}</p>}
           {validation.warning ? <p className="status-banner warning">{validation.warning}</p> : null}
           {canContinue ? <Link className="primary-button" href="/app/approval">Review approval</Link> : <p className="status-banner error">{route.reason}</p>}

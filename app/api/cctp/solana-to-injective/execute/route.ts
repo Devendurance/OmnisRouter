@@ -5,6 +5,12 @@ import {
   executeSolanaToInjectiveCctpTransfer,
 } from "../../../../../lib/server/cctp/solana-to-injective-executor";
 import { SolanaToInjectiveCctpExecutionError } from "../../../../../lib/server/cctp/solana-to-injective";
+import {
+  DAILY_SPONSORED_GAS_CREDIT_EXHAUSTED_ERROR,
+  getRequestIp,
+  reserveSponsoredGasCredit,
+  rollbackSponsoredGasCredit,
+} from "../../../../../lib/server/gas-credit-limiter";
 
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_SOLANA_TO_INJECTIVE";
@@ -19,7 +25,9 @@ type ExecuteRequestBody = {
 export async function POST(request: Request) {
   let stage = "validation";
   let burnTxHash: string | null = null;
+  let executionSubmitted = false;
   let lastValidation: ReturnType<typeof validateBody> | null = null;
+  let reservedLimiterKey: string | null = null;
 
   try {
     const body = await request.json() as ExecuteRequestBody;
@@ -40,6 +48,15 @@ export async function POST(request: Request) {
       }), { status: 400 });
     }
 
+    const limiterUserKey = validation.serverSolanaSourceAddress || getRequestIp(request);
+    const limiterReservation = reserveSponsoredGasCredit(limiterUserKey);
+
+    if (!limiterReservation.ok) {
+      return NextResponse.json({ ok: false, error: DAILY_SPONSORED_GAS_CREDIT_EXHAUSTED_ERROR }, { status: 429 });
+    }
+
+    reservedLimiterKey = limiterReservation.storageKey;
+
     stage = "execution";
     const result = await executeSolanaToInjectiveCctpTransfer({
       amountUsdc: validation.amountUsdc,
@@ -47,6 +64,7 @@ export async function POST(request: Request) {
       recipientInjectiveAddress: validation.injectiveRecipientAddress,
       confirmation: EXECUTION_CONFIRMATION,
     });
+    executionSubmitted = true;
     burnTxHash = result.burnTxHash;
 
     stage = "response building";
@@ -66,6 +84,10 @@ export async function POST(request: Request) {
       message: "Solana burn confirmed. Iris attestation received. Injective relay completed.",
     }));
   } catch (error) {
+    if (reservedLimiterKey && !executionSubmitted) {
+      rollbackSponsoredGasCredit(reservedLimiterKey);
+    }
+
     const failedStage = getFailedStage(error, stage);
     const message = error instanceof Error ? error.message : "Unable to execute Solana to Injective CCTP transfer.";
 

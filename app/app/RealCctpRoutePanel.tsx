@@ -255,10 +255,10 @@ export function RealCctpRoutePanel() {
       {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner success">OmnisRouter detected an Injective recipient and found a real Solana &rarr; Injective USDC route.</p> : null}
       {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner warning">This route uses a staged CCTP V2 manual relay.</p> : null}
       {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <div className="cctp-result-panel"><p className="status-banner success">Phases: Solana burn &rarr; Iris attestation &rarr; Injective relay &rarr; Receipt</p></div> : null}
-      <p className="status-banner warning">Safety note: This uses a demo-funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
+      <p className="status-banner warning">Safety note: This uses a funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
       <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
       <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
-      {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 5 sponsored testnet transfers. Try again tomorrow.</p> : null}
+      {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 10 sponsored testnet transfers. Try again tomorrow.</p> : null}
       {!realRouteDetected ? <p className="status-banner warning">Real execution currently supports Solana and Injective recipients on the testnet USDC CCTP routes.</p> : null}
       {executionInputsValid && !policyAllowsExecution ? <p className="status-banner error">Real execution is blocked by the current spending policy or emergency pause.</p> : null}
 
@@ -286,7 +286,7 @@ export function RealCctpRoutePanel() {
 
       {eligible ? (
         <>
-          <label className="toggle-row cctp-confirm-row"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />I understand this executes a real testnet transfer using the demo executor wallet.</label>
+          <label className="toggle-row cctp-confirm-row"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />I understand this executes a real testnet transfer using the testnet executor wallet.</label>
           <div className="button-row cctp-action-row">
             <button className="primary-button" disabled={!canExecute} onClick={executeTransfer} type="button">{executionState.status === "loading" ? "Executing..." : executionState.status === "success" ? "Transfer Executed" : "Execute Real Testnet Transfer"}</button>
           </div>
@@ -326,7 +326,7 @@ export function RealCctpRoutePanel() {
               <DetailList entries={[
                 ["Burn tx", (() => {
                   const hash = solanaToInjectiveExecutionState.data?.burnTxHash;
-                  return hash ? <a href={injectiveTestnetTxUrl(hash)} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a> : "Pending";
+                  return hash ? <a href={`https://explorer.solana.com/tx/${hash}?cluster=devnet`} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a> : "Pending";
                 })()],
                 ["Relay tx", (() => {
                   const hash = solanaToInjectiveExecutionState.data?.relayTxHash;
@@ -358,7 +358,7 @@ function humanizeError(error: unknown, fallback: string): string {
   }
 
   if (lower.includes("credits exhausted") || lower.includes("daily sponsored")) {
-    return "You've used today's 5 sponsored testnet transfers. Try again tomorrow.";
+    return "You've used today's 10 sponsored testnet transfers. Try again tomorrow.";
   }
 
   if (lower.includes("fee") || lower.includes("circle")) {

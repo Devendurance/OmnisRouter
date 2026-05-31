@@ -1,12 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import { useProductState } from "./product-state";
-
-const fallbackPayments = [
-  { id: "PMT-1041", amount: "18 USDC", route: "Injective -> Solana", status: "Complete" },
-  { id: "PMT-1040", amount: "72 USDC", route: "Solana -> Injective", status: "Approved" },
-];
 
 export function AppHero({ eyebrow, title, copy }: { eyebrow: string; title: React.ReactNode; copy: string }) {
   const { route, gasCredits, remainingGasCredits } = useProductState();
@@ -31,28 +25,6 @@ export function AppHero({ eyebrow, title, copy }: { eyebrow: string; title: Reac
 
 export function Metric({ label, value, detail, badge }: { label: string; value: string; detail: string; badge?: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small>{badge ? <em className="balance-badge">{badge}</em> : null}</div>;
-}
-
-export function RecentPayments() {
-  const { latestExecution } = useProductState();
-  const payments = latestExecution
-    ? [{ id: "SIM-LATEST", amount: latestExecution.receipt.amount, route: latestExecution.receipt.route, status: latestExecution.receipt.status }, ...fallbackPayments]
-    : fallbackPayments;
-
-  return (
-    <div className="card">
-      <p className="eyebrow">Recent payments</p>
-      <div className="payments-list">
-        {payments.map((payment) => (
-          <Link className="payment-row" href="/app/receipt" key={payment.id}>
-            <strong>{payment.amount}</strong>
-            <span>{payment.route}</span>
-            <small>{payment.id} / {payment.status}</small>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export function DetailList({ entries, split = false }: { entries: [string, React.ReactNode][]; split?: boolean }) {
