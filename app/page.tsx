@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { WaitlistForm } from "./waitlist-form";
+
 export default function Home() {
   return (
     <main className="landing-page">
@@ -11,6 +13,7 @@ export default function Home() {
           <a className="landing-nav-link" href="#how-it-works">How it works</a>
           <a className="landing-nav-link" href="#features">Features</a>
           <a className="landing-nav-link" href="#demo">Demo</a>
+          <a className="landing-nav-link" href="#waitlist">Waitlist</a>
           <Link className="landing-nav-link" href="/app/rules">Rules</Link>
         </div>
         <Link className="btn-nav" href="/app">Open App</Link>
@@ -95,6 +98,19 @@ export default function Home() {
             <div className="agent-mock"><div className="agent-header"><div className="agent-dots"><span className="agent-dot r" /><span className="agent-dot y" /><span className="agent-dot g" /></div><span className="agent-label">OmnisRouter · Agent Command</span></div><div className="agent-body"><div className="msg-user">Send 40 USDC from Solana to this Injective address inj1router...9xk</div><div className="msg-agent">I found a supported mock route for this payment.<div className="msg-route">Source: Solana USDC<br />Destination: Injective USDC<br />Rail: CCTP standard transfer<br />Rule check: Approval required &gt; 25 USDC<br />Gas: Sponsored credit available</div><Link className="msg-approve" href="/app/approval">Approve payment →</Link></div></div></div>
             <div className="rules-demo"><div className="rules-demo-title">Spending rules</div>{[["Max transfer", "100 USDC"], ["Daily cap", "250 USDC"], ["Approval above", "25 USDC"], ["Destination", "Injective"], ["Gas credits", "10 / day"]].map(([name, value]) => <div className="rule-row" key={name}><span className="rule-name">{name}</span><span className="rule-val">{value}</span></div>)}<p className="rules-note">Rules run in code · not AI inference</p></div>
           </div>
+        </div>
+      </section>
+
+      <section className="landing-section alt" id="waitlist">
+        <div className="section-inner waitlist-inner">
+          <div>
+            <p className="section-eyebrow">Private testnet</p>
+            <h2 className="section-h2">Request early access</h2>
+            <p className="section-copy waitlist-copy">
+              OmnisRouter is currently in private testnet demo mode. Join the waitlist to get access when public testing opens.
+            </p>
+          </div>
+          <WaitlistForm />
         </div>
       </section>
 
