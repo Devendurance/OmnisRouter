@@ -153,6 +153,7 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
     }
 
     if (state.gasCredits.lastResetDate !== getLocalDateKey()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resets persisted daily gas credits after hydration/date rollover.
       setState((current) => ({ ...current, gasCredits: withRemaining(0) }));
       return;
     }
