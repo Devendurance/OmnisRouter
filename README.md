@@ -65,7 +65,7 @@ Did the recipient receive it?
 into this:
 
 ```txt
-send 0.1 USDC from Solana to inj...
+send 0.1 USDC to inj...
 ```
 
 The app handles the rest.
@@ -105,7 +105,7 @@ Users can type a simple command instead of manually selecting bridge options.
 Example:
 
 ```txt
-send 0.1 USDC from Solana to inj1...
+send 0.1 USDC to inj1...
 ```
 
 OmnisRouter extracts:
@@ -357,49 +357,17 @@ supabase/
 
 ---
 
-## Environment Variables
-
-Create a local `.env` file.
-
-Do not commit `.env`.
-
-### Public Environment Variables
-
-Only this value is safe to expose publicly:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-```
-
-Do **not** include `/rest/v1` in the Supabase URL.
-
-Correct:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-```
-
-Wrong:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co/rest/v1
-```
-
----
-
 ### Server-Only Environment Variables
 
-These must stay private.
-
 ```env
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+SUPABASE_SERVICE_ROLE_KEY=my_supabase_service_role_key
 
-DEMO_ACCESS_CODE=your_private_demo_code
+DEMO_ACCESS_CODE=my_private_demo_code
 
-SOLANA_SOURCE_ADDRESS=your_solana_testnet_execution_wallet
-SOLANA_PRIVATE_KEY=your_solana_private_key
+SOLANA_SOURCE_ADDRESS=my_solana_testnet_execution_wallet
+SOLANA_PRIVATE_KEY=my_solana_private_key
 
-INJECTIVE_EVM_PRIVATE_KEY=your_injective_evm_relayer_key
+INJECTIVE_EVM_PRIVATE_KEY=my_injective_evm_relayer_key
 
 ENABLE_SOLANA_BURN=true
 CONFIRM_SOLANA_BURN=EXECUTE_SOLANA_TESTNET_BURN
@@ -407,7 +375,7 @@ CONFIRM_SOLANA_TO_INJECTIVE_RELAY=YES
 
 ENABLE_CCTP_EXECUTION_API=true
 CCTP_AMOUNT_USDC=0.1
-CCTP_MAX_FEE_USDC=0.6
+CCTP_MAX_FEE_USDC=0.6 (fallback incase circle's fee api fails)
 CONFIRM_MANUAL_MAX_FEE=YES
 ```
 
@@ -423,16 +391,6 @@ These are mainly useful for local scripts or manual testing.
 ---
 
 ## Security Notes
-
-The following values must never be committed:
-
-```txt
-.env
-.env.local
-private keys
-service role keys
-demo access code
-```
 
 The Supabase service role key is only used server-side.
 
@@ -505,42 +463,6 @@ Expected result:
 ```txt
 Compiled successfully
 ```
-
----
-
-## Deployment
-
-OmnisRouter is designed to deploy on Vercel.
-
-Add all required environment variables in:
-
-```txt
-Vercel → Project → Settings → Environment Variables
-```
-
-Required Vercel variables:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-DEMO_ACCESS_CODE=...
-
-SOLANA_SOURCE_ADDRESS=...
-SOLANA_PRIVATE_KEY=...
-
-INJECTIVE_EVM_PRIVATE_KEY=...
-
-ENABLE_SOLANA_BURN=true
-CONFIRM_SOLANA_BURN=EXECUTE_SOLANA_TESTNET_BURN
-CONFIRM_SOLANA_TO_INJECTIVE_RELAY=YES
-
-ENABLE_CCTP_EXECUTION_API=true
-CCTP_AMOUNT_USDC=0.1
-CCTP_MAX_FEE_USDC=0.6
-CONFIRM_MANUAL_MAX_FEE=YES
-```
-
-After adding or changing environment variables, redeploy the project.
 
 ---
 
