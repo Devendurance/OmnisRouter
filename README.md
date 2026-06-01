@@ -9,7 +9,7 @@
 OmnisRouter is a testnet MVP that lets a user enter a simple payment command like:
 
 ```txt
-send 0.1 USDC from Solana to inj...
+send 0.1 USDC to inj...
 ```
 
 The app parses the intent, detects the source and destination chains, prepares the correct CCTP route, executes the testnet transfer, and stores a real receipt after completion.
