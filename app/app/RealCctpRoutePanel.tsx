@@ -179,7 +179,7 @@ export function RealCctpRoutePanel() {
 
       setPreparedBurnState({ status: "success", data: payload });
     } catch (error) {
-      setPreparedBurnState({ status: "error", error: humanizeError(error, "Unable to prepare the gasless user-authorized burn.") });
+      setPreparedBurnState({ status: "error", error: humanizeError(error, "Unable to review the route.") });
     }
   }
 
@@ -197,7 +197,7 @@ export function RealCctpRoutePanel() {
       setSubmitBurnState({ status: "idle" });
       setCompleteRelayState({ status: "idle" });
       setRelayStage("idle");
-      setWalletSignatureState({ status: "success", data: { message: "Wallet signed. Ready to submit burn." } });
+      setWalletSignatureState({ status: "success", data: { message: "USDC authorized. Ready to send with OmnisRouter." } });
     } catch (error) {
       setSignedBurnTransaction(null);
       setWalletSignatureState({ status: "error", error: humanizeError(error, "Wallet signature test failed. No transaction was sent.") });
@@ -359,11 +359,15 @@ export function RealCctpRoutePanel() {
       <h2>{realRouteDetected ? "Real CCTP Testnet Route Available" : "Real CCTP Testnet Route"}</h2>
       {realRouteDetected && route.realRouteCandidate?.sourceChain === "Injective" ? <p className="status-banner success">OmnisRouter detected a Solana recipient and found a real Injective &rarr; Solana USDC route.</p> : null}
       {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner success">OmnisRouter detected an Injective recipient and found a real Solana &rarr; Injective USDC route.</p> : null}
-      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner warning">This route uses a staged CCTP V2 manual relay.</p> : null}
-      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <div className="cctp-result-panel"><p className="status-banner success">Phases: Solana burn &rarr; Iris attestation &rarr; Injective relay &rarr; Receipt</p></div> : null}
+      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <p className="status-banner warning">Execution mode: User-authorized, OmnisRouter-sponsored</p> : null}
+      {realRouteDetected && route.realRouteCandidate?.sourceChain === "Solana" ? <div className="cctp-result-panel"><p className="status-banner success">You authorize the USDC transfer. OmnisRouter pays Solana gas and handles the relay.</p></div> : null}
       <p className="status-banner warning">Safety note: This uses a funded testnet executor wallet. Production should use user wallet signing, auth, and rate limits.</p>
       <p className="status-banner success">Sponsored transfers today: {remainingGasCredits} / {gasCredits.dailyLimit} remaining</p>
-      <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
+      {solanaToInjectiveDetected ? (
+        <p className="status-banner warning">OmnisRouter pays Solana gas and handles the Injective relay.</p>
+      ) : (
+        <p className="status-banner warning">OmnisRouter sponsors the source-chain INJ gas. Circle&apos;s forwarding fee is deducted from the transferred USDC amount.</p>
+      )}
       {!creditsAvailable ? <p className="status-banner error">You&apos;ve used today&apos;s 10 sponsored testnet transfers. Try again tomorrow.</p> : null}
       {!realRouteDetected ? <p className="status-banner warning">Real execution currently supports Solana and Injective recipients on the testnet USDC CCTP routes.</p> : null}
       {executionInputsValid && !policyAllowsExecution ? <p className="status-banner error">Real execution is blocked by the current spending policy or emergency pause.</p> : null}
@@ -416,7 +420,7 @@ export function RealCctpRoutePanel() {
               onClick={prepareUserAuthorizedBurn}
               type="button"
             >
-              {preparedBurnState.status === "loading" ? "Preparing gasless burn..." : "Prepare gasless user-authorized burn"}
+              {preparedBurnState.status === "loading" ? "Reviewing route..." : "Review Route"}
             </button>
             {preparedBurnState.status === "success" && typeof signTransaction === "function" ? (
               <button
@@ -425,26 +429,26 @@ export function RealCctpRoutePanel() {
                 onClick={testWalletSignature}
                 type="button"
               >
-                {walletSignatureState.status === "loading" ? "Requesting wallet signature..." : "Sign burn with wallet"}
+                {walletSignatureState.status === "loading" ? "Authorizing USDC..." : "Authorize USDC"}
               </button>
             ) : null}
             <button className="primary-button" disabled={!canSubmitSignedBurn} onClick={submitSignedBurn} type="button">
-              {submitBurnState.status === "loading" ? "Submitting signed burn..." : "Submit signed burn"}
+              {submitBurnState.status === "loading" ? "Sending with OmnisRouter..." : "Send with OmnisRouter"}
             </button>
             {submitBurnState.status === "success" ? (
               <button className="primary-button" disabled={!canCompleteInjectiveRelay} onClick={completeInjectiveRelay} type="button">
-                {completeRelayState.status === "loading" ? "Completing Injective relay..." : "Complete Injective relay"}
+                {completeRelayState.status === "loading" ? "Finalizing on Injective..." : "Finalize on Injective"}
               </button>
             ) : null}
           </div>
-          {!connectedSolanaAddress ? <p className="status-banner warning">Connect a Solana wallet to prepare a user-authorized burn.</p> : null}
+          {!connectedSolanaAddress ? <p className="status-banner warning">Connect a Solana wallet to review this route.</p> : null}
           {preparedBurnState.status === "error" ? <p className="status-banner error">{preparedBurnState.error}</p> : null}
           {preparedBurnState.status === "success" ? <PreparedBurnPanel result={preparedBurnState.data} /> : null}
           {walletSignatureState.status === "error" ? <p className="status-banner error">{walletSignatureState.error}</p> : null}
           {walletSignatureState.status === "success" ? <p className="status-banner success">{walletSignatureState.data.message}</p> : null}
-          {preparedBurnState.status === "success" ? <p className="status-banner success">Stage: Prepared</p> : null}
-          {walletSignatureState.status === "success" ? <p className="status-banner success">Stage: Wallet signed</p> : null}
-          {submitBurnState.status === "loading" ? <p className="status-banner warning">Stage: Verifying transaction → Broadcasting burn</p> : null}
+          {preparedBurnState.status === "success" ? <p className="status-banner success">Stage: Route prepared</p> : null}
+          {walletSignatureState.status === "success" ? <p className="status-banner success">Stage: USDC authorized</p> : null}
+          {submitBurnState.status === "loading" ? <p className="status-banner warning">Stage: Sending with OmnisRouter</p> : null}
           {submitBurnState.status === "error" ? <p className="status-banner error">{submitBurnState.error}</p> : null}
           {submitBurnState.status === "success" ? <SubmittedBurnPanel result={submitBurnState.data} /> : null}
           {submitBurnState.status === "success" ? <RelayStagesPanel response={completeRelayState} stage={relayStage} /> : null}
@@ -556,7 +560,8 @@ function ExecutionPanel({ result }: { result: ExecuteResponse }) {
 function PreparedBurnPanel({ result }: { result: PreparedUserAuthorizedBurnResponse }) {
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Gasless user-authorized burn prepared. No transaction sent.</p>
+      <p className="status-banner success">Execution mode: User-authorized, OmnisRouter-sponsored</p>
+      <p className="status-banner success">You authorize the USDC transfer. OmnisRouter pays Solana gas and handles the relay.</p>
       <DetailList entries={[
         ["Execution mode", result.executionMode ?? "user-authorized-server-sponsored"],
         ["Required user signature", result.requiredUserSignature ?? "Unavailable"],
@@ -565,7 +570,7 @@ function PreparedBurnPanel({ result }: { result: PreparedUserAuthorizedBurnRespo
         ["Message event account", result.messageSentEventData ?? "Unavailable"],
         ["User USDC ATA", result.userUsdcAta ?? "Unavailable"],
         ["Gas paid by", result.gasPaidBy ?? "OmnisRouter"],
-        ["Note", result.note ?? "Prepared only; no broadcast."],
+        ["Note", result.note ?? "Route prepared; no transfer sent yet."],
       ]} />
     </div>
   );
@@ -574,10 +579,10 @@ function PreparedBurnPanel({ result }: { result: PreparedUserAuthorizedBurnRespo
 function SubmittedBurnPanel({ result }: { result: SubmitSignedBurnResponse }) {
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Stage: Burn confirmed</p>
+      <p className="status-banner success">Stage: Solana transfer confirmed</p>
       <DetailList entries={[
         ["Burn tx", result.burnTxHash ? <a href={`https://explorer.solana.com/tx/${result.burnTxHash}?cluster=devnet`} target="_blank" rel="noreferrer">{shortenHash(result.burnTxHash, 12)}</a> : "Unavailable"],
-        ["Message", result.message ?? "Burn submitted and confirmed. Iris relay not attempted in this phase."],
+        ["Message", result.message ?? "Solana transfer confirmed. Ready to finalize on Injective."],
       ]} />
     </div>
   );
@@ -589,11 +594,11 @@ function RelayStagesPanel({ response, stage }: { response: ApiState<CompleteInje
 
   return (
     <div className="cctp-result-panel">
-      <p className="status-banner success">Stage: Burn confirmed</p>
-      {response.status === "idle" ? <p className="status-banner warning">Click Complete Injective relay to poll Iris and submit receiveMessage.</p> : null}
-      {response.status !== "idle" ? <p className={stage === "polling-iris" ? "status-banner warning" : "status-banner success"}>Stage: Polling Iris</p> : null}
-      {completed ? <p className="status-banner success">Stage: Attestation ready</p> : null}
-      {completed ? <p className="status-banner success">Stage: Relaying to Injective</p> : null}
+      <p className="status-banner success">Stage: Solana transfer confirmed</p>
+      {response.status === "idle" ? <p className="status-banner warning">Click Finalize on Injective to wait for Circle attestation and complete the route.</p> : null}
+      {response.status !== "idle" ? <p className={stage === "polling-iris" ? "status-banner warning" : "status-banner success"}>Stage: Waiting for Circle attestation</p> : null}
+      {completed ? <p className="status-banner success">Stage: Attestation received</p> : null}
+      {completed ? <p className="status-banner success">Stage: Finalizing on Injective</p> : null}
       {completed ? <p className="status-banner success">Stage: Receipt saved</p> : null}
       {result?.status === "pending" ? <p className="status-banner warning">{result.message ?? "Attestation pending. Retry shortly."}</p> : null}
       <DetailList entries={[
