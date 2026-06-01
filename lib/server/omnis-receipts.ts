@@ -53,14 +53,20 @@ type OmnisReceiptInput = {
 
 export async function insertOmnisReceipt(receipt: ReceiptInsert) {
   const supabase = createSupabaseServiceRoleClient();
-  const { error } = await supabase.from("omnis_receipts").insert({
-    gas_sponsor: "OmnisRouter",
-    ...receipt,
-  });
+  const { data, error } = await supabase
+    .from("omnis_receipts")
+    .insert({
+      gas_sponsor: "OmnisRouter",
+      ...receipt,
+    })
+    .select("id")
+    .single();
 
   if (error) {
     throw new Error(`Unable to persist OmnisRouter receipt: ${error.message}`);
   }
+
+  return typeof data?.id === "string" ? data.id : null;
 }
 
 export async function listOmnisReceipts() {
@@ -78,9 +84,43 @@ export async function listOmnisReceipts() {
   return (data ?? []) as OmnisReceiptRow[];
 }
 
+export async function findOmnisReceiptByBurnTx(burnTxHash: string) {
+  const supabase = createSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("omnis_receipts")
+    .select("*")
+    .eq("burn_tx", burnTxHash)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Unable to load OmnisRouter receipt by burn tx: ${error.message}`);
+  }
+
+  return data as OmnisReceiptRow | null;
+}
+
+export async function updateOmnisReceiptRelayCompleted(id: string, relayTxHash: string, rawReceipt: JsonRecord) {
+  const supabase = createSupabaseServiceRoleClient();
+  const { error } = await supabase
+    .from("omnis_receipts")
+    .update({
+      raw_receipt: rawReceipt,
+      receive_message_tx: relayTxHash,
+      relay_tx: relayTxHash,
+      status: "completed",
+    })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`Unable to update OmnisRouter receipt: ${error.message}`);
+  }
+}
+
 export async function persistOmnisReceiptBestEffort(receipt: OmnisReceiptInput) {
   try {
-    await insertOmnisReceipt({
+    return await insertOmnisReceipt({
       amount_usdc: receipt.amountUsdc,
       approval_tx: receipt.approvalTxHash ?? null,
       burn_tx: receipt.burnTxHash,
@@ -119,6 +159,7 @@ export async function persistOmnisReceiptBestEffort(receipt: OmnisReceiptInput) 
     });
   } catch (error) {
     console.error("OmnisRouter receipt persistence skipped:", error instanceof Error ? error.message : error);
+    return null;
   }
 }
 

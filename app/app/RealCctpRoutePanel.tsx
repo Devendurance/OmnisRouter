@@ -64,6 +64,18 @@ type SubmitSignedBurnResponse = {
   message?: string;
 };
 
+type CompleteInjectiveRelayResponse = {
+  ok: boolean;
+  status?: "pending" | "completed";
+  error?: string;
+  burnTxHash?: string;
+  relayTxHash?: string;
+  receiptId?: string | null;
+  message?: string;
+};
+
+type RelayStage = "idle" | "burn-confirmed" | "polling-iris" | "attestation-ready" | "relaying-injective" | "receipt-saved";
+
 type TransferInputs = {
   amountUsdc: string;
   solanaRecipientAddress: string;
@@ -106,6 +118,8 @@ export function RealCctpRoutePanel() {
   const [walletSignatureState, setWalletSignatureState] = useState<ApiState<{ message: string }>>({ status: "idle" });
   const [signedBurnTransaction, setSignedBurnTransaction] = useState<string | null>(null);
   const [submitBurnState, setSubmitBurnState] = useState<ApiState<SubmitSignedBurnResponse>>({ status: "idle" });
+  const [completeRelayState, setCompleteRelayState] = useState<ApiState<CompleteInjectiveRelayResponse>>({ status: "idle" });
+  const [relayStage, setRelayStage] = useState<RelayStage>("idle");
   const currentInputs = { amountUsdc, solanaRecipientAddress };
   const preflightReady = preflightState.status === "success" && inputsMatch(preflightInputs, currentInputs);
   const creditsAvailable = remainingGasCredits > 0;
@@ -131,6 +145,11 @@ export function RealCctpRoutePanel() {
     policyAllowsSolanaToInjectiveExecution &&
     submitBurnState.status !== "loading" &&
     submitBurnState.status !== "success";
+  const canCompleteInjectiveRelay =
+    submitBurnState.status === "success" &&
+    Boolean(submitBurnState.data.burnTxHash) &&
+    completeRelayState.status !== "loading" &&
+    !(completeRelayState.status === "success" && completeRelayState.data.status === "completed");
 
   async function prepareUserAuthorizedBurn() {
     if (!canPrepareUserAuthorizedBurn) return;
@@ -139,6 +158,8 @@ export function RealCctpRoutePanel() {
     setWalletSignatureState({ status: "idle" });
     setSignedBurnTransaction(null);
     setSubmitBurnState({ status: "idle" });
+    setCompleteRelayState({ status: "idle" });
+    setRelayStage("idle");
 
     try {
       const response = await fetch("/api/cctp/solana-to-injective/user/prepare-burn", {
@@ -174,6 +195,8 @@ export function RealCctpRoutePanel() {
       const signedTransaction = await signTransaction(transaction);
       setSignedBurnTransaction(uint8ArrayToBase64(signedTransaction.serialize()));
       setSubmitBurnState({ status: "idle" });
+      setCompleteRelayState({ status: "idle" });
+      setRelayStage("idle");
       setWalletSignatureState({ status: "success", data: { message: "Wallet signed. Ready to submit burn." } });
     } catch (error) {
       setSignedBurnTransaction(null);
@@ -204,8 +227,46 @@ export function RealCctpRoutePanel() {
       }
 
       setSubmitBurnState({ status: "success", data: payload });
+      setCompleteRelayState({ status: "idle" });
+      setRelayStage("burn-confirmed");
     } catch (error) {
       setSubmitBurnState({ status: "error", error: error instanceof Error ? error.message : "Signed burn could not be submitted." });
+    }
+  }
+
+  async function completeInjectiveRelay() {
+    if (!canCompleteInjectiveRelay || submitBurnState.status !== "success" || !submitBurnState.data.burnTxHash) return;
+
+    setRelayStage("polling-iris");
+    setCompleteRelayState({ status: "loading" });
+
+    try {
+      const response = await fetch("/api/cctp/solana-to-injective/user/complete-relay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          burnTxHash: submitBurnState.data.burnTxHash,
+          amountUsdc,
+          sourceSolanaAddress: connectedSolanaAddress,
+          injectiveRecipientAddress: intent.recipientAddress,
+        }),
+      });
+      const payload = await response.json() as CompleteInjectiveRelayResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `API returned status ${response.status}`);
+      }
+
+      if (payload.status === "completed") {
+        setRelayStage("receipt-saved");
+        recordRealSponsoredExecution();
+      } else {
+        setRelayStage("polling-iris");
+      }
+
+      setCompleteRelayState({ status: "success", data: payload });
+    } catch (error) {
+      setCompleteRelayState({ status: "error", error: error instanceof Error ? error.message : "Injective relay could not be completed. Retry without burning again." });
     }
   }
 
@@ -370,6 +431,11 @@ export function RealCctpRoutePanel() {
             <button className="primary-button" disabled={!canSubmitSignedBurn} onClick={submitSignedBurn} type="button">
               {submitBurnState.status === "loading" ? "Submitting signed burn..." : "Submit signed burn"}
             </button>
+            {submitBurnState.status === "success" ? (
+              <button className="primary-button" disabled={!canCompleteInjectiveRelay} onClick={completeInjectiveRelay} type="button">
+                {completeRelayState.status === "loading" ? "Completing Injective relay..." : "Complete Injective relay"}
+              </button>
+            ) : null}
           </div>
           {!connectedSolanaAddress ? <p className="status-banner warning">Connect a Solana wallet to prepare a user-authorized burn.</p> : null}
           {preparedBurnState.status === "error" ? <p className="status-banner error">{preparedBurnState.error}</p> : null}
@@ -381,6 +447,8 @@ export function RealCctpRoutePanel() {
           {submitBurnState.status === "loading" ? <p className="status-banner warning">Stage: Verifying transaction → Broadcasting burn</p> : null}
           {submitBurnState.status === "error" ? <p className="status-banner error">{submitBurnState.error}</p> : null}
           {submitBurnState.status === "success" ? <SubmittedBurnPanel result={submitBurnState.data} /> : null}
+          {submitBurnState.status === "success" ? <RelayStagesPanel response={completeRelayState} stage={relayStage} /> : null}
+          {completeRelayState.status === "error" ? <p className="status-banner error">{completeRelayState.error}</p> : null}
         </>
       ) : null}
     </div>
@@ -511,6 +579,32 @@ function SubmittedBurnPanel({ result }: { result: SubmitSignedBurnResponse }) {
         ["Burn tx", result.burnTxHash ? <a href={`https://explorer.solana.com/tx/${result.burnTxHash}?cluster=devnet`} target="_blank" rel="noreferrer">{shortenHash(result.burnTxHash, 12)}</a> : "Unavailable"],
         ["Message", result.message ?? "Burn submitted and confirmed. Iris relay not attempted in this phase."],
       ]} />
+    </div>
+  );
+}
+
+function RelayStagesPanel({ response, stage }: { response: ApiState<CompleteInjectiveRelayResponse>; stage: RelayStage }) {
+  const result = response.status === "success" ? response.data : null;
+  const completed = result?.status === "completed";
+
+  return (
+    <div className="cctp-result-panel">
+      <p className="status-banner success">Stage: Burn confirmed</p>
+      {response.status === "idle" ? <p className="status-banner warning">Click Complete Injective relay to poll Iris and submit receiveMessage.</p> : null}
+      {response.status !== "idle" ? <p className={stage === "polling-iris" ? "status-banner warning" : "status-banner success"}>Stage: Polling Iris</p> : null}
+      {completed ? <p className="status-banner success">Stage: Attestation ready</p> : null}
+      {completed ? <p className="status-banner success">Stage: Relaying to Injective</p> : null}
+      {completed ? <p className="status-banner success">Stage: Receipt saved</p> : null}
+      {result?.status === "pending" ? <p className="status-banner warning">{result.message ?? "Attestation pending. Retry shortly."}</p> : null}
+      <DetailList entries={[
+        ["Burn tx", result?.burnTxHash ? <a href={`https://explorer.solana.com/tx/${result.burnTxHash}?cluster=devnet`} target="_blank" rel="noreferrer">{shortenHash(result.burnTxHash, 12)}</a> : "Waiting for relay completion"],
+        ["Relay tx", result?.relayTxHash ? txLink(result.relayTxHash, "Pending") : "Pending"],
+      ]} />
+      {completed ? (
+        <div className="button-row cctp-action-row">
+          <Link className="secondary-button" href="/app/receipt">View Receipt</Link>
+        </div>
+      ) : null}
     </div>
   );
 }

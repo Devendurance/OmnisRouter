@@ -86,6 +86,53 @@ const messageTransmitterV2Abi = [
   },
 ] as const;
 
+export async function relaySolanaCctpMessageToInjective(messageBytes: Hex, attestationBytes: Hex) {
+  const injAccount = privateKeyToAccount(readInjectivePrivateKey());
+  const walletClient = createWalletClient({
+    account: injAccount,
+    chain: injectiveTestnetEvm,
+    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
+  });
+
+  let relayTxHash: Hex;
+
+  try {
+    relayTxHash = await walletClient.writeContract({
+      address: INJECTIVE_MESSAGE_TRANSMITTER_V2,
+      abi: messageTransmitterV2Abi,
+      functionName: "receiveMessage",
+      args: [messageBytes, attestationBytes],
+      account: injAccount,
+      chain: injectiveTestnetEvm,
+    });
+  } catch (error) {
+    throw withRelayStage(error, "receive transaction");
+  }
+
+  return { relayTxHash, relayReceipt: await waitForSolanaCctpInjectiveRelayReceipt(relayTxHash) };
+}
+
+export async function waitForSolanaCctpInjectiveRelayReceipt(relayTxHash: Hex) {
+  const publicClient = createPublicClient({
+    chain: injectiveTestnetEvm,
+    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
+  });
+
+  let relayReceipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
+
+  try {
+    relayReceipt = await publicClient.waitForTransactionReceipt({ hash: relayTxHash });
+  } catch (error) {
+    throw withRelayStage(error, "receive receipt", relayTxHash);
+  }
+
+  if (relayReceipt.status !== "success") {
+    throw withRelayStage(new Error("receiveMessage transaction failed."), "receive receipt", relayTxHash);
+  }
+
+  return relayReceipt;
+}
+
 export type ExecuteSolanaToInjectiveInput = PrepareSolanaToInjectiveCctpTransferInput & {
   confirmation: "EXECUTE_SOLANA_TO_INJECTIVE";
 };
@@ -523,44 +570,14 @@ export async function executeSolanaToInjectiveCctpTransfer(
   }
 
   // --- Injective relay ---
-  const injAccount = privateKeyToAccount(readInjectivePrivateKey());
-  const publicClient = createPublicClient({
-    chain: injectiveTestnetEvm,
-    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
-  });
-  const walletClient = createWalletClient({
-    account: injAccount,
-    chain: injectiveTestnetEvm,
-    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
-  });
-
   let relayTxHash: string;
 
   try {
-    relayTxHash = await walletClient.writeContract({
-      address: INJECTIVE_MESSAGE_TRANSMITTER_V2,
-      abi: messageTransmitterV2Abi,
-      functionName: "receiveMessage",
-      args: [messageBytes as Hex, attestationBytes as Hex],
-      account: injAccount,
-      chain: injectiveTestnetEvm,
-    });
+    ({ relayTxHash } = await relaySolanaCctpMessageToInjective(messageBytes as Hex, attestationBytes as Hex));
   } catch (error) {
-    throw new SolanaToInjectiveCctpExecutionError("receive transaction", error, burnTxHash);
-  }
-
-  let relayReceipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
-
-  try {
-    relayReceipt = await publicClient.waitForTransactionReceipt({ hash: relayTxHash as Hex });
-  } catch (error) {
-    throw new SolanaToInjectiveCctpExecutionError("receive receipt", error, burnTxHash);
-  }
-
-  if (relayReceipt.status !== "success") {
     throw new SolanaToInjectiveCctpExecutionError(
-      "receive receipt",
-      new Error("receiveMessage transaction failed."),
+      getRelayStage(error),
+      error,
       burnTxHash,
     );
   }
@@ -598,4 +615,22 @@ function bs58Decode(encoded: string): Uint8Array {
   }
 
   return new Uint8Array(bytes);
+}
+
+function withRelayStage(error: unknown, stage: "receive transaction" | "receive receipt", relayTxHash?: Hex) {
+  if (error instanceof Error) {
+    return Object.assign(error, { relayStage: stage, relayTxHash });
+  }
+
+  return Object.assign(new Error(String(error)), { relayStage: stage, relayTxHash });
+}
+
+function getRelayStage(error: unknown): "receive transaction" | "receive receipt" {
+  if (error && typeof error === "object" && "relayStage" in error) {
+    const stage = (error as { relayStage?: unknown }).relayStage;
+
+    if (stage === "receive receipt") return "receive receipt";
+  }
+
+  return "receive transaction";
 }
