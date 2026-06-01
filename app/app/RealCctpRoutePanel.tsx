@@ -1,5 +1,7 @@
 "use client";
 
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Transaction, VersionedTransaction } from "@solana/web3.js";
 import Link from "next/link";
 import { useState } from "react";
 import { DetailList } from "./components";
@@ -51,12 +53,31 @@ type SolanaToInjectiveExecuteResponse = {
   message?: string;
 };
 
+type PreparedUserAuthorizedBurnResponse = {
+  ok: boolean;
+  error?: string;
+  route?: "solana-to-injective";
+  executionMode?: "user-authorized-server-sponsored";
+  serializedTransaction?: string;
+  sourceSolanaAddress?: string;
+  sponsorFeePayer?: string;
+  eventRentPayer?: string;
+  messageSentEventData?: string;
+  userUsdcAta?: string;
+  amountUsdc?: string;
+  injectiveRecipientAddress?: string;
+  requiredUserSignature?: string;
+  gasPaidBy?: string;
+  note?: string;
+};
+
 type TransferInputs = {
   amountUsdc: string;
   solanaRecipientAddress: string;
 };
 
 export function RealCctpRoutePanel() {
+  const { publicKey: solanaPublicKey, signTransaction } = useWallet();
   const { gasCredits, intent, recordCctpReceipt, recordRealSponsoredExecution, remainingGasCredits, route, rules } = useProductState();
   const amountUsdc = Number.isFinite(intent.amount) ? String(intent.amount) : "";
   const solanaRecipientAddress = route.recipientValidation.normalizedAddress || intent.recipientAddress.trim();
@@ -84,6 +105,8 @@ export function RealCctpRoutePanel() {
   const [preflightInputs, setPreflightInputs] = useState<TransferInputs | null>(null);
   const [solanaToInjectiveConfirmed, setSolanaToInjectiveConfirmed] = useState(false);
   const [solanaToInjectiveExecutionState, setSolanaToInjectiveExecutionState] = useState<ApiState<SolanaToInjectiveExecuteResponse>>({ status: "idle" });
+  const [preparedBurnState, setPreparedBurnState] = useState<ApiState<PreparedUserAuthorizedBurnResponse>>({ status: "idle" });
+  const [walletSignatureState, setWalletSignatureState] = useState<ApiState<{ message: string }>>({ status: "idle" });
   const currentInputs = { amountUsdc, solanaRecipientAddress };
   const preflightReady = preflightState.status === "success" && inputsMatch(preflightInputs, currentInputs);
   const creditsAvailable = remainingGasCredits > 0;
@@ -94,6 +117,63 @@ export function RealCctpRoutePanel() {
     solanaToInjectiveExecutionState.status !== "success" &&
     policyAllowsExecution &&
     rules.allowedDestinationChains.includes("Injective");
+  const connectedSolanaAddress = solanaPublicKey?.toBase58() ?? "";
+  const canPrepareUserAuthorizedBurn =
+    solanaToInjectiveDetected &&
+    Boolean(connectedSolanaAddress) &&
+    intent.amount > 0 &&
+    route.recipientValidation.isValid &&
+    route.recipientValidation.chainType === "Injective" &&
+    preparedBurnState.status !== "loading";
+  const canTestWalletSignature =
+    preparedBurnState.status === "success" &&
+    Boolean(preparedBurnState.data.serializedTransaction) &&
+    typeof signTransaction === "function" &&
+    walletSignatureState.status !== "loading";
+
+  async function prepareUserAuthorizedBurn() {
+    if (!canPrepareUserAuthorizedBurn) return;
+
+    setPreparedBurnState({ status: "loading" });
+    setWalletSignatureState({ status: "idle" });
+
+    try {
+      const response = await fetch("/api/cctp/solana-to-injective/user/prepare-burn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsdc,
+          sourceSolanaAddress: connectedSolanaAddress,
+          injectiveRecipientAddress: intent.recipientAddress,
+        }),
+      });
+      const payload = await response.json() as PreparedUserAuthorizedBurnResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `API returned status ${response.status}`);
+      }
+
+      setPreparedBurnState({ status: "success", data: payload });
+    } catch (error) {
+      setPreparedBurnState({ status: "error", error: humanizeError(error, "Unable to prepare the gasless user-authorized burn.") });
+    }
+  }
+
+  async function testWalletSignature() {
+    if (!canTestWalletSignature || !preparedBurnState.data.serializedTransaction || !signTransaction) return;
+
+    setWalletSignatureState({ status: "loading" });
+
+    try {
+      const rawTransaction = base64ToUint8Array(preparedBurnState.data.serializedTransaction);
+      const transaction = deserializeSolanaTransaction(rawTransaction);
+
+      await signTransaction(transaction);
+      setWalletSignatureState({ status: "success", data: { message: "Wallet signature successful. No transaction sent." } });
+    } catch (error) {
+      setWalletSignatureState({ status: "error", error: humanizeError(error, "Wallet signature test failed. No transaction was sent.") });
+    }
+  }
 
   async function executeSolanaToInjectiveTransfer() {
     if (!solanaToInjectiveCanExecute) return;
@@ -304,6 +384,24 @@ export function RealCctpRoutePanel() {
           </label>
           <div className="button-row cctp-action-row">
             <button
+              className="secondary-button"
+              disabled={!canPrepareUserAuthorizedBurn}
+              onClick={prepareUserAuthorizedBurn}
+              type="button"
+            >
+              {preparedBurnState.status === "loading" ? "Preparing gasless burn..." : "Prepare gasless user-authorized burn"}
+            </button>
+            {preparedBurnState.status === "success" && typeof signTransaction === "function" ? (
+              <button
+                className="secondary-button"
+                disabled={!canTestWalletSignature}
+                onClick={testWalletSignature}
+                type="button"
+              >
+                {walletSignatureState.status === "loading" ? "Requesting wallet signature..." : "Test wallet signature"}
+              </button>
+            ) : null}
+            <button
               className="primary-button"
               disabled={!solanaToInjectiveCanExecute}
               onClick={executeSolanaToInjectiveTransfer}
@@ -316,6 +414,11 @@ export function RealCctpRoutePanel() {
                 : "Execute Solana → Injective Route"}
             </button>
           </div>
+          {!connectedSolanaAddress ? <p className="status-banner warning">Connect a Solana wallet to prepare a user-authorized burn.</p> : null}
+          {preparedBurnState.status === "error" ? <p className="status-banner error">{preparedBurnState.error}</p> : null}
+          {preparedBurnState.status === "success" ? <PreparedBurnPanel result={preparedBurnState.data} /> : null}
+          {walletSignatureState.status === "error" ? <p className="status-banner error">{walletSignatureState.error}</p> : null}
+          {walletSignatureState.status === "success" ? <p className="status-banner success">{walletSignatureState.data.message}</p> : null}
           {solanaToInjectiveExecutionState.status === "error" ? (
             <p className="status-banner error">{solanaToInjectiveExecutionState.error}</p>
           ) : null}
@@ -347,6 +450,25 @@ export function RealCctpRoutePanel() {
 
 function inputsMatch(preflightInputs: TransferInputs | null, currentInputs: TransferInputs) {
   return preflightInputs?.amountUsdc === currentInputs.amountUsdc && preflightInputs.solanaRecipientAddress === currentInputs.solanaRecipientAddress;
+}
+
+function base64ToUint8Array(value: string): Uint8Array {
+  const binary = window.atob(value);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function deserializeSolanaTransaction(rawTransaction: Uint8Array): Transaction | VersionedTransaction {
+  try {
+    return Transaction.from(rawTransaction);
+  } catch {
+    return VersionedTransaction.deserialize(rawTransaction);
+  }
 }
 
 function humanizeError(error: unknown, fallback: string): string {
@@ -412,6 +534,24 @@ function ExecutionPanel({ result }: { result: ExecuteResponse }) {
       <div className="button-row cctp-action-row">
         <Link className="secondary-button" href="/app/receipt">View Receipt</Link>
       </div>
+    </div>
+  );
+}
+
+function PreparedBurnPanel({ result }: { result: PreparedUserAuthorizedBurnResponse }) {
+  return (
+    <div className="cctp-result-panel">
+      <p className="status-banner success">Gasless user-authorized burn prepared. No transaction sent.</p>
+      <DetailList entries={[
+        ["Execution mode", result.executionMode ?? "user-authorized-server-sponsored"],
+        ["Required user signature", result.requiredUserSignature ?? "Unavailable"],
+        ["Sponsor fee payer", result.sponsorFeePayer ?? "Unavailable"],
+        ["Event rent payer", result.eventRentPayer ?? "Unavailable"],
+        ["Message event account", result.messageSentEventData ?? "Unavailable"],
+        ["User USDC ATA", result.userUsdcAta ?? "Unavailable"],
+        ["Gas paid by", result.gasPaidBy ?? "OmnisRouter"],
+        ["Note", result.note ?? "Prepared only; no broadcast."],
+      ]} />
     </div>
   );
 }
