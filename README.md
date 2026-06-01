@@ -1,3 +1,7 @@
+**!Important:** Demo access code for Judges to test the product: 862910endy
+
+---
+
 # OmnisRouter
 
 **AI-assisted cross-chain USDC routing between Injective and Solana.**
