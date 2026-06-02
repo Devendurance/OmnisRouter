@@ -5,14 +5,15 @@ import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppHero, DetailList, Metric } from "./components";
+import { useInjectiveEvmWallet, INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX } from "./InjectiveEvmWalletProvider";
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
-import { useProductState, type WalletState } from "./product-state";
+import { useProductState } from "./product-state";
 import SolanaWalletButton from "./SolanaWalletButton";
 import { useInjectiveNativeBalance, useInjectiveUsdcBalance, type InjectiveUsdcBalanceState } from "./useInjectiveNativeBalance";
 import { useSolanaUsdcBalance, type SolanaUsdcBalanceState } from "./useSolanaUsdcBalance";
 
 export default function DashboardPage() {
-  const { wallets, rules, gasCredits, remainingGasCredits, ruleResult } = useProductState();
+  const { rules, gasCredits, remainingGasCredits, ruleResult } = useProductState();
   const { connection } = useConnection();
   const { connected, publicKey } = useWallet();
   const [solBalanceState, setSolBalanceState] = useState<SolBalanceState>({ status: "idle" });
@@ -99,7 +100,7 @@ export default function DashboardPage() {
           <div className="button-row"><Link className="primary-button" href="/app/agent">Start payment</Link><Link className="secondary-button" href="/app/rules">Review rules</Link></div>
         </div>
         <div className="dashboard-stack">
-          <WalletsCard wallets={wallets} />
+          <WalletsCard />
         </div>
       </section>
     </>
@@ -221,18 +222,15 @@ function formatInjBalance(state: ReturnType<typeof useInjectiveNativeBalance>["s
   return { value: "Connect wallet or refresh balance", detail: "Connect an Injective wallet to read testnet INJ", badges: ["Testnet"] };
 }
 
-function WalletsCard({
-  wallets,
-}: {
-  wallets: Record<WalletState["chain"], WalletState>;
-}) {
+function WalletsCard() {
   const { connected, connecting, publicKey } = useWallet();
   const injectiveWallet = useInjectiveWallet();
+  const injectiveEvmWallet = useInjectiveEvmWallet();
   const [isInjectivePickerOpen, setIsInjectivePickerOpen] = useState(false);
   const solanaAddress = publicKey?.toBase58() ?? "";
   const solanaStatus = connecting ? "connecting" : connected ? "connected" : "disconnected";
   const injectiveWallets = ["Keplr", "Leap", "Ninji"] as const;
-  const evmWallet = wallets.EVM;
+  const evmChainOk = injectiveEvmWallet.chainId.toLowerCase() === INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX;
 
   return (
     <div className="card">
@@ -276,12 +274,25 @@ function WalletsCard({
         </div>
         <div className="wallet-row">
           <div>
-            <strong>EVM wallet</strong>
-            <span>Coming later</span>
+            <strong>Injective EVM wallet</strong>
+            <span>{injectiveEvmWallet.isConnected ? injectiveEvmWallet.shortAddress : "Not connected"}</span>
+            {injectiveEvmWallet.isConnected ? <span className="wallet-full-address" title={injectiveEvmWallet.address}>{injectiveEvmWallet.address}</span> : null}
+            {injectiveEvmWallet.isConnected ? <span className="wallet-detail">Chain: {injectiveEvmWallet.chainIdDecimal || "Unknown"} {evmChainOk ? "✓" : "— expected 1439"}</span> : null}
+            {injectiveEvmWallet.balance.status === "success" ? <span className="wallet-detail">USDC: {injectiveEvmWallet.balance.usdc}</span> : null}
+            {injectiveEvmWallet.error ? <span aria-live="polite" className="wallet-error">{injectiveEvmWallet.error}</span> : null}
           </div>
           <div className="wallet-actions">
-            <span className={`wallet-status ${evmWallet.connectionStatus}`}>coming later</span>
-            <button className="secondary-button compact" disabled type="button">Connect</button>
+            <span aria-live="polite" className={`wallet-status ${injectiveEvmWallet.connectionStatus}`}>{injectiveEvmWallet.connectionStatus}</span>
+            {injectiveEvmWallet.isConnected ? (
+              <>
+                {!evmChainOk ? (
+                  <button className="secondary-button compact" onClick={() => { void injectiveEvmWallet.switchToInjectiveEvmTestnet(); }} type="button">Switch to Injective EVM Testnet</button>
+                ) : null}
+                <button className="secondary-button compact" onClick={injectiveEvmWallet.disconnect} type="button">Disconnect</button>
+              </>
+            ) : (
+              <button className="primary-button compact" disabled={injectiveEvmWallet.connectionStatus === "connecting"} onClick={() => { void injectiveEvmWallet.connect(); }} type="button">Connect Injective EVM Wallet</button>
+            )}
           </div>
         </div>
         <p className="wallet-note">Wallet connection and displayed balances use testnet data.</p>
