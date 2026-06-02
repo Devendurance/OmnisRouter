@@ -7,10 +7,12 @@ import {
   buildTransferWithAuthorizationTypedData,
   getRelayerAddressFromEnv,
   getSolanaUsdcAta,
+  hashTransferWithAuthorizationTypedData,
   parseEvmAddress,
   parsePositiveUsdcAmount,
   parseSolanaAddress,
   readInjectiveUsdcBalance,
+  readUsdcDomainDebug,
 } from "../../../../../../lib/server/cctp/injective-to-solana-auth";
 
 const AUTH_VALIDITY_SECONDS = 10 * 60;
@@ -30,7 +32,10 @@ export async function POST(request: Request) {
     const solanaRecipientPublicKey = parseSolanaAddress(body.solanaRecipientAddress);
     const solanaRecipientAddress = solanaRecipientPublicKey.toBase58();
     const relayerAddress = getRelayerAddressFromEnv();
-    const sourceUsdcBalance = await readInjectiveUsdcBalance(sourceEvmAddress);
+    const [sourceUsdcBalance, domainDebug] = await Promise.all([
+      readInjectiveUsdcBalance(sourceEvmAddress),
+      readUsdcDomainDebug(),
+    ]);
 
     if (sourceUsdcBalance < amount) {
       return NextResponse.json({
@@ -54,6 +59,7 @@ export async function POST(request: Request) {
       validAfter,
       validBefore,
     });
+    const preparedTypedDataHash = hashTransferWithAuthorizationTypedData(typedData);
 
     return NextResponse.json({
       ok: true,
@@ -61,6 +67,7 @@ export async function POST(request: Request) {
       executionMode: "user-authorized-server-sponsored",
       authorizationType: "EIP-3009 transferWithAuthorization",
       typedData,
+      preparedTypedDataHash,
       from: sourceEvmAddress,
       to: relayerAddress,
       value: amount.toString(),
@@ -80,8 +87,22 @@ export async function POST(request: Request) {
         usdc: formatUnits(amount, USDC_DECIMALS),
         baseUnits: amount.toString(),
       },
+      domainDebug: {
+        name: typedData.domain.name,
+        version: typedData.domain.version,
+        symbol: domainDebug.contractSymbol,
+        decimals: domainDebug.contractDecimals,
+        chainId: typedData.domain.chainId,
+        verifyingContract: typedData.domain.verifyingContract,
+        contractDomainSeparator: domainDebug.contractDomainSeparator,
+        locallyComputedDomainSeparator: domainDebug.locallyComputedDomainSeparator,
+        domainSeparatorMatches: domainDebug.domainSeparatorMatches,
+        localDomainSeparatorError: domainDebug.localDomainSeparatorError,
+      },
       gasPaidBy: "OmnisRouter",
-      note: "User signs authorization only. No transaction is sent in this phase.",
+      note: domainDebug.domainSeparatorMatches
+        ? "User signs authorization only. No transaction is sent in this phase."
+        : "Typed-data domain does not match Injective USDC contract domain. Signature would be rejected on-chain.",
     });
   } catch (error) {
     return NextResponse.json({

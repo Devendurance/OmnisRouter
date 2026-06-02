@@ -2,8 +2,9 @@
 
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Transaction, VersionedTransaction } from "@solana/web3.js";
+import { hashTypedData } from "viem";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DetailList } from "./components";
 import { INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID, useInjectiveEvmWallet, type InjectiveEvmWalletState } from "./InjectiveEvmWalletProvider";
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
@@ -15,7 +16,7 @@ type ApiState<T> =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "success"; data: T }
-  | { status: "error"; error: string };
+  | { status: "error"; error: string; data?: T };
 
 type PreflightResponse = {
   ok: boolean;
@@ -90,6 +91,7 @@ type PreparedInjectiveAuthorizationResponse = {
   executionMode?: "user-authorized-server-sponsored";
   authorizationType?: "EIP-3009 transferWithAuthorization";
   typedData?: TransferWithAuthorizationTypedData;
+  preparedTypedDataHash?: string;
   from?: string;
   to?: string;
   value?: string;
@@ -103,6 +105,18 @@ type PreparedInjectiveAuthorizationResponse = {
   solanaRecipientAta?: string;
   sourceUsdcBalance?: { usdc?: string; baseUnits?: string };
   requestedAmount?: { usdc?: string; baseUnits?: string };
+  domainDebug?: {
+    name?: string;
+    version?: string;
+    symbol?: string;
+    decimals?: number;
+    chainId?: number;
+    verifyingContract?: string;
+    contractDomainSeparator?: string;
+    locallyComputedDomainSeparator?: string;
+    domainSeparatorMatches?: boolean;
+    localDomainSeparatorError?: string;
+  };
   gasPaidBy?: string;
   note?: string;
 };
@@ -112,7 +126,42 @@ type VerifiedInjectiveAuthorizationResponse = {
   error?: string;
   recoveredSigner?: string;
   sourceEvmAddress?: string;
+  activeEvmAddress?: string;
+  addressesMatch?: boolean;
   authorizationValid?: boolean;
+  preparedTypedDataHash?: string;
+  verifyTypedDataHash?: string;
+  hashesMatch?: boolean;
+  signatureLength?: number;
+  signatureStartsWith0x?: boolean;
+  typedDataDomain?: Record<string, unknown>;
+  typedDataPrimaryType?: string;
+  typedDataMessage?: Record<string, string>;
+  message?: string;
+};
+
+type SignedInjectiveAuthorization = {
+  signature: string;
+  activeEvmAddress: string;
+  preparedTypedDataHash: string;
+  signingMethod: "eth_signTypedData_v4";
+  signingParamsOrder: "[address, typedDataJson]";
+  signatureLength: number;
+  signatureStartsWith0x: boolean;
+};
+
+type SubmittedInjectiveAuthorizationResponse = {
+  ok: boolean;
+  error?: string;
+  route?: "injective-to-solana";
+  executionMode?: "user-authorized-server-sponsored";
+  phase?: "authorization-submitted";
+  authorizationTxHash?: string;
+  sourceEvmAddress?: string;
+  relayerAddress?: string;
+  amountUsdc?: string;
+  authorizationConsumed?: boolean;
+  gasPaidBy?: string;
   message?: string;
 };
 
@@ -178,8 +227,9 @@ export function RealCctpRoutePanel() {
   const [sourceWalletMode, setSourceWalletMode] = useState<InjectiveSourceWalletMode>(null);
   const [preparedAuthorizationInputs, setPreparedAuthorizationInputs] = useState<AuthorizationInputs | null>(null);
   const [preparedAuthorizationState, setPreparedAuthorizationState] = useState<ApiState<PreparedInjectiveAuthorizationResponse>>({ status: "idle" });
-  const [authorizationSignatureState, setAuthorizationSignatureState] = useState<ApiState<{ signature: string }>>({ status: "idle" });
+  const [authorizationSignatureState, setAuthorizationSignatureState] = useState<ApiState<SignedInjectiveAuthorization>>({ status: "idle" });
   const [verifiedAuthorizationState, setVerifiedAuthorizationState] = useState<ApiState<VerifiedInjectiveAuthorizationResponse>>({ status: "idle" });
+  const [submittedAuthorizationState, setSubmittedAuthorizationState] = useState<ApiState<SubmittedInjectiveAuthorizationResponse>>({ status: "idle" });
   const [injectiveAuthorizationDebug, setInjectiveAuthorizationDebug] = useState<InjectiveAuthorizationDebug>({
     prepareAuthorizationPayload: null,
     prepareAuthorizationResponse: null,
@@ -201,6 +251,14 @@ export function RealCctpRoutePanel() {
     authorizationReady &&
     authorizationSignatureState.status === "success" &&
     verifiedAuthorizationState.status !== "loading";
+  const canSubmitInjectiveAuthorization =
+    authorizationReady &&
+    verifiedAuthorizationState.status === "success" &&
+    authorizationSignatureState.status === "success" &&
+    preparedAuthorizationState.status === "success" &&
+    Boolean(preparedAuthorizationState.data.domainDebug?.domainSeparatorMatches) &&
+    submittedAuthorizationState.status !== "loading" &&
+    submittedAuthorizationState.status !== "success";
   const connectedSolanaAddress = solanaPublicKey?.toBase58() ?? "";
   const canPrepareUserAuthorizedBurn =
     solanaToInjectiveDetected &&
@@ -227,6 +285,16 @@ export function RealCctpRoutePanel() {
     Boolean(submitBurnState.data.burnTxHash) &&
     completeRelayState.status !== "loading" &&
     !(completeRelayState.status === "success" && completeRelayState.data.status === "completed");
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setAuthorizationSignatureState({ status: "idle" });
+      setVerifiedAuthorizationState({ status: "idle" });
+      setSubmittedAuthorizationState({ status: "idle" });
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [amountUsdc, sourceEvmAddress, injectiveEvmWallet.chainId]);
 
   async function prepareUserAuthorizedBurn() {
     if (!canPrepareUserAuthorizedBurn) return;
@@ -353,6 +421,7 @@ export function RealCctpRoutePanel() {
     setPreparedAuthorizationState({ status: "loading" });
     setAuthorizationSignatureState({ status: "idle" });
     setVerifiedAuthorizationState({ status: "idle" });
+    setSubmittedAuthorizationState({ status: "idle" });
 
     try {
       if (sourceWalletMode !== "injective-evm") {
@@ -418,9 +487,13 @@ export function RealCctpRoutePanel() {
     setVerifiedAuthorizationState({ status: "idle" });
 
     try {
-      const evmAddress = injectiveEvmWallet.address || preparedAuthorizationState.data.from;
+      const preparedSourceAddress = String(preparedAuthorizationState.data.from || preparedAuthorizationState.data.typedData?.message.from || "");
 
-      if (!evmAddress) {
+      if (!preparedSourceAddress) {
+        throw new Error("Prepared authorization is missing a source EVM address.");
+      }
+
+      if (!injectiveEvmWallet.address) {
         throw new Error("Connect an EVM wallet before signing authorization.");
       }
 
@@ -430,16 +503,41 @@ export function RealCctpRoutePanel() {
         throw new Error("No EVM wallet provider found. Install an EVM wallet.");
       }
 
+      let accounts = await ethereum.request({ method: "eth_accounts" });
+
+      if (!Array.isArray(accounts) || accounts.length === 0) {
+        accounts = await ethereum.request({ method: "eth_requestAccounts" });
+      }
+
+      const activeAccount = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
+
+      if (activeAccount.toLowerCase() !== preparedSourceAddress.toLowerCase()) {
+        throw new Error("Switch your active EVM wallet account to the prepared source address, then sign again.");
+      }
+
+      const walletTypedData = buildWalletTypedDataForSigning(preparedAuthorizationState.data.typedData);
+      const preparedTypedDataHash = hashTransferWithAuthorizationTypedData(preparedAuthorizationState.data.typedData);
       const signature = await ethereum.request({
         method: "eth_signTypedData_v4",
-        params: [evmAddress, JSON.stringify(preparedAuthorizationState.data.typedData)],
+        params: [activeAccount, JSON.stringify(walletTypedData)],
       });
 
       if (typeof signature !== "string") {
         throw new Error("Wallet did not return an authorization signature.");
       }
 
-      setAuthorizationSignatureState({ status: "success", data: { signature } });
+      setAuthorizationSignatureState({
+        status: "success",
+        data: {
+          signature,
+          activeEvmAddress: activeAccount,
+          preparedTypedDataHash,
+          signingMethod: "eth_signTypedData_v4",
+          signingParamsOrder: "[address, typedDataJson]",
+          signatureLength: signature.length,
+          signatureStartsWith0x: signature.startsWith("0x"),
+        },
+      });
     } catch (error) {
       setAuthorizationSignatureState({ status: "error", error: error instanceof Error ? error.message : "Unable to sign authorization. No transaction was sent." });
     }
@@ -458,12 +556,19 @@ export function RealCctpRoutePanel() {
           typedData: preparedAuthorizationState.data.typedData,
           signature: authorizationSignatureState.data.signature,
           sourceEvmAddress: sourceEvmAddress || preparedAuthorizationState.data.from,
+          activeEvmAddress: authorizationSignatureState.data.activeEvmAddress,
+          preparedTypedDataHash: authorizationSignatureState.data.preparedTypedDataHash,
         }),
       });
       const payload = await response.json() as VerifiedInjectiveAuthorizationResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || `API returned status ${response.status}`);
+        setVerifiedAuthorizationState({
+          status: "error",
+          error: payload.error || `API returned status ${response.status}`,
+          data: payload,
+        });
+        return;
       }
 
       setVerifiedAuthorizationState({ status: "success", data: payload });
@@ -472,11 +577,41 @@ export function RealCctpRoutePanel() {
     }
   }
 
+  async function submitInjectiveAuthorization() {
+    if (!canSubmitInjectiveAuthorization || preparedAuthorizationState.status !== "success" || authorizationSignatureState.status !== "success") return;
+
+    setSubmittedAuthorizationState({ status: "loading" });
+
+    try {
+      const response = await fetch("/api/cctp/injective-to-solana/user/submit-authorization", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          typedData: preparedAuthorizationState.data.typedData,
+          signature: authorizationSignatureState.data.signature,
+          amountUsdc,
+          sourceEvmAddress: injectiveEvmWallet.address || preparedAuthorizationState.data.from,
+          solanaRecipientAddress,
+        }),
+      });
+      const payload = await response.json() as SubmittedInjectiveAuthorizationResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `API returned status ${response.status}`);
+      }
+
+      setSubmittedAuthorizationState({ status: "success", data: payload });
+    } catch (error) {
+      setSubmittedAuthorizationState({ status: "error", error: error instanceof Error ? error.message : "Unable to submit authorization." });
+    }
+  }
+
   function selectInjectiveSourceWalletMode(mode: InjectiveSourceWalletMode) {
     setSourceWalletMode(mode);
     setPreparedAuthorizationState({ status: "idle" });
     setAuthorizationSignatureState({ status: "idle" });
     setVerifiedAuthorizationState({ status: "idle" });
+    setSubmittedAuthorizationState({ status: "idle" });
     setPreparedAuthorizationInputs(null);
   }
 
@@ -612,9 +747,11 @@ export function RealCctpRoutePanel() {
             canPrepare={canPrepareInjectiveAuthorization}
             canSign={canSignInjectiveAuthorization}
             canVerify={canVerifyInjectiveAuthorization}
+            canSubmit={canSubmitInjectiveAuthorization}
             onPrepare={prepareInjectiveAuthorization}
             onSign={signInjectiveAuthorization}
             onVerify={verifyInjectiveAuthorization}
+            onSubmit={submitInjectiveAuthorization}
             preparedAuthorizationState={preparedAuthorizationState}
             connectedInjectiveNativeAddress={injectiveWallet.address}
             debug={injectiveAuthorizationDebug}
@@ -623,6 +760,7 @@ export function RealCctpRoutePanel() {
             sourceWalletMode={sourceWalletMode}
             onSelectSourceWalletMode={selectInjectiveSourceWalletMode}
             verifiedAuthorizationState={verifiedAuthorizationState}
+            submittedAuthorizationState={submittedAuthorizationState}
             authorizationReady={authorizationReady}
           />
           <ServerFundedExecutionSection
@@ -699,6 +837,45 @@ function authorizationInputsMatch(preparedInputs: AuthorizationInputs | null, cu
     preparedInputs.sourceEvmAddress === currentInputs.sourceEvmAddress;
 }
 
+function formatJson(value: unknown) {
+  if (!value) return "Unavailable";
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "Unavailable";
+  }
+}
+
+function buildWalletTypedDataForSigning(typedData: TransferWithAuthorizationTypedData) {
+  return {
+    ...typedData,
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      TransferWithAuthorization: typedData.types.TransferWithAuthorization,
+    },
+  };
+}
+
+function hashTransferWithAuthorizationTypedData(typedData: TransferWithAuthorizationTypedData) {
+  return hashTypedData({
+    domain: typedData.domain,
+    types: { TransferWithAuthorization: typedData.types.TransferWithAuthorization },
+    primaryType: typedData.primaryType,
+    message: {
+      ...typedData.message,
+      value: BigInt(typedData.message.value),
+      validAfter: BigInt(typedData.message.validAfter),
+      validBefore: BigInt(typedData.message.validBefore),
+    },
+  });
+}
+
 function base64ToUint8Array(value: string): Uint8Array {
   const binary = window.atob(value);
   const bytes = new Uint8Array(binary.length);
@@ -756,6 +933,7 @@ function InjectiveAuthorizationPanel({
   authorizationReady,
   canPrepare,
   canSign,
+  canSubmit,
   canVerify,
   connectedInjectiveNativeAddress,
   debug,
@@ -764,15 +942,18 @@ function InjectiveAuthorizationPanel({
   onPrepare,
   onSelectSourceWalletMode,
   onSign,
+  onSubmit,
   onVerify,
   preparedAuthorizationState,
   sourceWalletMode,
+  submittedAuthorizationState,
   verifiedAuthorizationState,
 }: {
-  authorizationSignatureState: ApiState<{ signature: string }>;
+  authorizationSignatureState: ApiState<SignedInjectiveAuthorization>;
   authorizationReady: boolean;
   canPrepare: boolean;
   canSign: boolean;
+  canSubmit: boolean;
   canVerify: boolean;
   connectedInjectiveNativeAddress: string;
   debug: InjectiveAuthorizationDebug;
@@ -781,9 +962,11 @@ function InjectiveAuthorizationPanel({
   onPrepare: () => void;
   onSelectSourceWalletMode: (mode: InjectiveSourceWalletMode) => void;
   onSign: () => void;
+  onSubmit: () => void;
   onVerify: () => void;
   preparedAuthorizationState: ApiState<PreparedInjectiveAuthorizationResponse>;
   sourceWalletMode: InjectiveSourceWalletMode;
+  submittedAuthorizationState: ApiState<SubmittedInjectiveAuthorizationResponse>;
   verifiedAuthorizationState: ApiState<VerifiedInjectiveAuthorizationResponse>;
 }) {
   const requestedAmount = preparedAuthorizationState.status === "success"
@@ -839,6 +1022,25 @@ function InjectiveAuthorizationPanel({
             ["Requested amount", requestedAmountText],
             ["OmnisRouter relayer/sponsor", preparedAuthorizationState.status === "success" ? preparedAuthorizationState.data.relayerAddress ?? "Unavailable" : "Available after prepare"],
           ]} />
+          {preparedAuthorizationState.status === "success" && preparedAuthorizationState.data.domainDebug ? (
+            <>
+              <DetailList entries={[
+                ["USDC name", preparedAuthorizationState.data.domainDebug.name ?? "Unavailable"],
+                ["USDC version", preparedAuthorizationState.data.domainDebug.version ?? "Unavailable"],
+                ["USDC symbol", preparedAuthorizationState.data.domainDebug.symbol ?? "Unavailable"],
+                ["USDC decimals", String(preparedAuthorizationState.data.domainDebug.decimals ?? "")],
+                ["Domain chainId", String(preparedAuthorizationState.data.domainDebug.chainId ?? "")],
+                ["Domain verifying contract", preparedAuthorizationState.data.domainDebug.verifyingContract ?? "Unavailable"],
+                ["Domain separator match", preparedAuthorizationState.data.domainDebug.domainSeparatorMatches ? "Yes" : "No"],
+                ["Contract domain separator", preparedAuthorizationState.data.domainDebug.contractDomainSeparator ?? "Unavailable"],
+                ["Computed domain separator", preparedAuthorizationState.data.domainDebug.locallyComputedDomainSeparator ?? "Unavailable"],
+                ["Domain separator error", preparedAuthorizationState.data.domainDebug.localDomainSeparatorError ?? "None"],
+              ]} />
+              {!preparedAuthorizationState.data.domainDebug.domainSeparatorMatches ? (
+                <p className="status-banner error">Typed-data domain does not match Injective USDC contract domain. Signature would be rejected on-chain.</p>
+              ) : null}
+            </>
+          ) : null}
           <div className="button-row cctp-action-row">
             <button className="secondary-button" disabled={!canPrepare} onClick={onPrepare} type="button">
               {preparedAuthorizationState.status === "loading" ? "Preparing authorization..." : "Prepare gasless authorization"}
@@ -849,14 +1051,42 @@ function InjectiveAuthorizationPanel({
             <button className="secondary-button" disabled={!canVerify} onClick={onVerify} type="button">
               {verifiedAuthorizationState.status === "loading" ? "Verifying authorization..." : "Verify authorization"}
             </button>
+            <button className="primary-button" disabled={!canSubmit} onClick={onSubmit} type="button">
+              {submittedAuthorizationState.status === "loading" ? "Submitting authorization..." : "Submit authorization"}
+            </button>
           </div>
-          <p className="status-banner warning">Current phase: prepare / sign / verify only. Submit authorization is not yet implemented.</p>
+          <p className="status-banner warning">Current phase: prepare / sign / verify / submit only. CCTP forwarding not implemented in this phase.</p>
         </>
       ) : null}
       {preparedAuthorizationState.status === "error" ? <p className="status-banner error">{preparedAuthorizationState.error}</p> : null}
       {preparedAuthorizationState.status === "success" && !authorizationReady ? <p className="status-banner warning">Authorization details changed. Prepare gasless authorization again before signing.</p> : null}
       {authorizationSignatureState.status === "error" ? <p className="status-banner error">{authorizationSignatureState.error}</p> : null}
       {verifiedAuthorizationState.status === "error" ? <p className="status-banner error">{verifiedAuthorizationState.error}</p> : null}
+      {verifiedAuthorizationState.status === "error" && verifiedAuthorizationState.data?.addressesMatch === false ? (
+        <>
+          <p className="status-banner error">The wallet that signed this authorization is not the same wallet used as the source address.</p>
+          <DetailList entries={[
+            ["Source EVM address", verifiedAuthorizationState.data.sourceEvmAddress ?? "Unavailable"],
+            ["Recovered signer", verifiedAuthorizationState.data.recoveredSigner ?? "Unavailable"],
+            ["Active EVM wallet address", evmWallet.address || "Unavailable"],
+            ["Prepared typed data hash", verifiedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
+            ["Verify typed data hash", verifiedAuthorizationState.data.verifyTypedDataHash ?? "Unavailable"],
+            ["Hashes match", verifiedAuthorizationState.data.hashesMatch ? "Yes" : "No"],
+            ["Signature length", String(verifiedAuthorizationState.data.signatureLength ?? "")],
+            ["Signature starts with 0x", verifiedAuthorizationState.data.signatureStartsWith0x ? "Yes" : "No"],
+            ["Typed data domain", formatJson(verifiedAuthorizationState.data.typedDataDomain)],
+            ["Typed data primary type", verifiedAuthorizationState.data.typedDataPrimaryType ?? "Unavailable"],
+            ["Message from", verifiedAuthorizationState.data.typedDataMessage?.from ?? "Unavailable"],
+            ["Message to", verifiedAuthorizationState.data.typedDataMessage?.to ?? "Unavailable"],
+            ["Message value", verifiedAuthorizationState.data.typedDataMessage?.value ?? "Unavailable"],
+            ["Message nonce", verifiedAuthorizationState.data.typedDataMessage?.nonce ?? "Unavailable"],
+          ]} />
+        </>
+      ) : null}
+      {submittedAuthorizationState.status === "error" ? <p className="status-banner error">{submittedAuthorizationState.error}</p> : null}
+      {submittedAuthorizationState.status === "loading" ? <p className="status-banner warning">Status: Submitting authorization</p> : null}
+      {submittedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization submitted</p> : null}
+      {submittedAuthorizationState.status === "success" ? <p className="status-banner success">This moves the authorized USDC to OmnisRouter&apos;s relayer wallet. OmnisRouter pays Injective gas. CCTP forwarding happens in the next phase.</p> : null}
       {preparedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization prepared</p> : null}
       {authorizationSignatureState.status === "success" ? <p className="status-banner success">Status: User signed authorization</p> : null}
       {verifiedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization verified</p> : null}
@@ -869,19 +1099,48 @@ function InjectiveAuthorizationPanel({
           ["Requested amount", amount(preparedAuthorizationState.data.requestedAmount)],
           ["Authorization type", preparedAuthorizationState.data.authorizationType ?? "EIP-3009 transferWithAuthorization"],
           ["USDC value", preparedAuthorizationState.data.value ?? "Unavailable"],
+          ["Prepared typed data hash", preparedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
           ["Solana recipient ATA", preparedAuthorizationState.data.solanaRecipientAta ?? "Unavailable"],
           ["Gas paid by", preparedAuthorizationState.data.gasPaidBy ?? "OmnisRouter"],
           ["Note", preparedAuthorizationState.data.note ?? "User signs authorization only. No transaction is sent in this phase."],
         ]} />
       ) : null}
       {authorizationSignatureState.status === "success" ? (
-        <DetailList entries={[["Signature", shortenHash(authorizationSignatureState.data.signature, 12)]]} />
+        <DetailList entries={[
+          ["Signature", shortenHash(authorizationSignatureState.data.signature, 12)],
+          ["Signing method", authorizationSignatureState.data.signingMethod],
+          ["Signing params order", authorizationSignatureState.data.signingParamsOrder],
+          ["Active EVM signer", authorizationSignatureState.data.activeEvmAddress],
+          ["Prepared typed data hash", authorizationSignatureState.data.preparedTypedDataHash],
+          ["Signature length", String(authorizationSignatureState.data.signatureLength)],
+          ["Signature starts with 0x", authorizationSignatureState.data.signatureStartsWith0x ? "Yes" : "No"],
+        ]} />
       ) : null}
       {verifiedAuthorizationState.status === "success" ? (
         <DetailList entries={[
           ["Recovered signer", verifiedAuthorizationState.data.recoveredSigner ?? "Unavailable"],
+          ["Active EVM signer", verifiedAuthorizationState.data.activeEvmAddress ?? "Unavailable"],
+          ["Prepared typed data hash", verifiedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
+          ["Verify typed data hash", verifiedAuthorizationState.data.verifyTypedDataHash ?? "Unavailable"],
+          ["Hashes match", verifiedAuthorizationState.data.hashesMatch ? "Yes" : "No"],
+          ["Signature length", String(verifiedAuthorizationState.data.signatureLength ?? "")],
+          ["Signature starts with 0x", verifiedAuthorizationState.data.signatureStartsWith0x ? "Yes" : "No"],
+          ["Typed data domain", formatJson(verifiedAuthorizationState.data.typedDataDomain)],
+          ["Typed data primary type", verifiedAuthorizationState.data.typedDataPrimaryType ?? "Unavailable"],
+          ["Typed data message", formatJson(verifiedAuthorizationState.data.typedDataMessage)],
           ["Authorization valid", verifiedAuthorizationState.data.authorizationValid ? "Yes" : "No"],
           ["Message", verifiedAuthorizationState.data.message ?? "Authorization signature verified. No transaction sent."],
+        ]} />
+      ) : null}
+      {submittedAuthorizationState.status === "success" ? (
+        <DetailList entries={[
+          ["Authorization tx", submittedAuthorizationState.data.authorizationTxHash ? (() => { const hash = submittedAuthorizationState.data.authorizationTxHash!; return <a href={`https://testnet.explorer.injective.network/tx/${hash}`} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a>; })() : "Unavailable"],
+          ["Relayer address", submittedAuthorizationState.data.relayerAddress ?? "Unavailable"],
+          ["Authorization consumed", submittedAuthorizationState.data.authorizationConsumed ? "Yes" : "No"],
+          ["Source EVM address", submittedAuthorizationState.data.sourceEvmAddress ?? "Unavailable"],
+          ["Amount", submittedAuthorizationState.data.amountUsdc ? `${submittedAuthorizationState.data.amountUsdc} USDC` : "Unavailable"],
+          ["Gas paid by", submittedAuthorizationState.data.gasPaidBy ?? "OmnisRouter"],
+          ["Message", submittedAuthorizationState.data.message ?? "Authorization submitted. CCTP burn not attempted in this phase."],
         ]} />
       ) : null}
     </div>
