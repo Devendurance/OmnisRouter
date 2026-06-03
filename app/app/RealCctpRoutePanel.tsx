@@ -553,16 +553,15 @@ export function RealCctpRoutePanel() {
         throw new Error("Connect an EVM wallet before signing authorization.");
       }
 
-      const ethereum = (window as Window & { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
-
-      if (!ethereum) {
-        throw new Error("No EVM wallet provider found. Install an EVM wallet.");
+      const signingProvider = injectiveEvmWallet.selectedProvider;
+      if (!signingProvider) {
+        throw new Error("Connect an Injective EVM wallet from the Dashboard first.");
       }
 
-      let accounts = await ethereum.request({ method: "eth_accounts" });
+      let accounts = await signingProvider.request({ method: "eth_accounts" });
 
       if (!Array.isArray(accounts) || accounts.length === 0) {
-        accounts = await ethereum.request({ method: "eth_requestAccounts" });
+        accounts = await signingProvider.request({ method: "eth_requestAccounts" });
       }
 
       const activeAccount = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
@@ -573,7 +572,7 @@ export function RealCctpRoutePanel() {
 
       const walletTypedData = buildWalletTypedDataForSigning(preparedAuthorizationState.data.typedData);
       const preparedTypedDataHash = hashTransferWithAuthorizationTypedData(preparedAuthorizationState.data.typedData);
-      const signature = await ethereum.request({
+      const signature = await signingProvider.request({
         method: "eth_signTypedData_v4",
         params: [activeAccount, JSON.stringify(walletTypedData)],
       });
