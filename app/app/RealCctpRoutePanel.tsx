@@ -165,6 +165,27 @@ type SubmittedInjectiveAuthorizationResponse = {
   message?: string;
 };
 
+type CompletedInjectiveForwardingResponse = {
+  ok: boolean;
+  error?: string;
+  route?: "injective-to-solana";
+  executionMode?: "user-authorized-server-sponsored";
+  phase?: "cctp-burn-submitted";
+  authorizationTxHash?: string;
+  approvalTxHash?: string | null;
+  burnTxHash?: string;
+  sourceEvmAddress?: string;
+  relayerAddress?: string;
+  amountUsdc?: string;
+  solanaRecipientAddress?: string;
+  solanaRecipientAta?: string;
+  stage?: string;
+  gasPaidBy?: string;
+  message?: string;
+};
+
+type ForwardingStage = "idle" | "burning-injective" | "burn-submitted";
+
 type InjectiveSourceWalletMode = "native-injective" | "injective-evm" | null;
 
 type InjectiveAuthorizationDebug = {
@@ -230,6 +251,8 @@ export function RealCctpRoutePanel() {
   const [authorizationSignatureState, setAuthorizationSignatureState] = useState<ApiState<SignedInjectiveAuthorization>>({ status: "idle" });
   const [verifiedAuthorizationState, setVerifiedAuthorizationState] = useState<ApiState<VerifiedInjectiveAuthorizationResponse>>({ status: "idle" });
   const [submittedAuthorizationState, setSubmittedAuthorizationState] = useState<ApiState<SubmittedInjectiveAuthorizationResponse>>({ status: "idle" });
+  const [forwardingState, setForwardingState] = useState<ApiState<CompletedInjectiveForwardingResponse>>({ status: "idle" });
+  const [forwardingStage, setForwardingStage] = useState<ForwardingStage>("idle");
   const [injectiveAuthorizationDebug, setInjectiveAuthorizationDebug] = useState<InjectiveAuthorizationDebug>({
     prepareAuthorizationPayload: null,
     prepareAuthorizationResponse: null,
@@ -259,6 +282,12 @@ export function RealCctpRoutePanel() {
     Boolean(preparedAuthorizationState.data.domainDebug?.domainSeparatorMatches) &&
     submittedAuthorizationState.status !== "loading" &&
     submittedAuthorizationState.status !== "success";
+  const canCompleteForwarding =
+    submittedAuthorizationState.status === "success" &&
+    Boolean(submittedAuthorizationState.data.authorizationTxHash) &&
+    preparedAuthorizationState.status === "success" &&
+    forwardingState.status !== "loading" &&
+    forwardingState.status !== "success";
   const connectedSolanaAddress = solanaPublicKey?.toBase58() ?? "";
   const canPrepareUserAuthorizedBurn =
     solanaToInjectiveDetected &&
@@ -291,6 +320,8 @@ export function RealCctpRoutePanel() {
       setAuthorizationSignatureState({ status: "idle" });
       setVerifiedAuthorizationState({ status: "idle" });
       setSubmittedAuthorizationState({ status: "idle" });
+      setForwardingState({ status: "idle" });
+      setForwardingStage("idle");
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
@@ -422,6 +453,8 @@ export function RealCctpRoutePanel() {
     setAuthorizationSignatureState({ status: "idle" });
     setVerifiedAuthorizationState({ status: "idle" });
     setSubmittedAuthorizationState({ status: "idle" });
+    setForwardingState({ status: "idle" });
+    setForwardingStage("idle");
 
     try {
       if (sourceWalletMode !== "injective-evm") {
@@ -606,12 +639,54 @@ export function RealCctpRoutePanel() {
     }
   }
 
+  async function completeForwarding() {
+    if (!canCompleteForwarding || preparedAuthorizationState.status !== "success" || submittedAuthorizationState.status !== "success") return;
+
+    setForwardingStage("burning-injective");
+    setForwardingState({ status: "loading" });
+
+    try {
+      const response = await fetch("/api/cctp/injective-to-solana/user/complete-forwarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authorizationTxHash: submittedAuthorizationState.data.authorizationTxHash,
+          sourceEvmAddress: injectiveEvmWallet.address || preparedAuthorizationState.data.from,
+          amountUsdc,
+          solanaRecipientAddress,
+          solanaRecipientAta: preparedAuthorizationState.data.solanaRecipientAta,
+          authorization: {
+            from: preparedAuthorizationState.data.from,
+            to: preparedAuthorizationState.data.to,
+            value: preparedAuthorizationState.data.value,
+            validAfter: preparedAuthorizationState.data.validAfter,
+            validBefore: preparedAuthorizationState.data.validBefore,
+            nonce: preparedAuthorizationState.data.nonce,
+          },
+        }),
+      });
+      const payload = await response.json() as CompletedInjectiveForwardingResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `API returned status ${response.status}`);
+      }
+
+      setForwardingStage("burn-submitted");
+      setForwardingState({ status: "success", data: payload });
+    } catch (error) {
+      setForwardingStage("idle");
+      setForwardingState({ status: "error", error: error instanceof Error ? error.message : "Unable to burn and forward USDC." });
+    }
+  }
+
   function selectInjectiveSourceWalletMode(mode: InjectiveSourceWalletMode) {
     setSourceWalletMode(mode);
     setPreparedAuthorizationState({ status: "idle" });
     setAuthorizationSignatureState({ status: "idle" });
     setVerifiedAuthorizationState({ status: "idle" });
     setSubmittedAuthorizationState({ status: "idle" });
+    setForwardingState({ status: "idle" });
+    setForwardingStage("idle");
     setPreparedAuthorizationInputs(null);
   }
 
@@ -752,6 +827,7 @@ export function RealCctpRoutePanel() {
             onSign={signInjectiveAuthorization}
             onVerify={verifyInjectiveAuthorization}
             onSubmit={submitInjectiveAuthorization}
+            onCompleteForwarding={completeForwarding}
             preparedAuthorizationState={preparedAuthorizationState}
             connectedInjectiveNativeAddress={injectiveWallet.address}
             debug={injectiveAuthorizationDebug}
@@ -761,6 +837,9 @@ export function RealCctpRoutePanel() {
             onSelectSourceWalletMode={selectInjectiveSourceWalletMode}
             verifiedAuthorizationState={verifiedAuthorizationState}
             submittedAuthorizationState={submittedAuthorizationState}
+            forwardingState={forwardingState}
+            forwardingStage={forwardingStage}
+            canCompleteForwarding={canCompleteForwarding}
             authorizationReady={authorizationReady}
           />
           <ServerFundedExecutionSection
@@ -931,6 +1010,7 @@ function humanizeError(error: unknown, fallback: string): string {
 function InjectiveAuthorizationPanel({
   authorizationSignatureState,
   authorizationReady,
+  canCompleteForwarding,
   canPrepare,
   canSign,
   canSubmit,
@@ -939,6 +1019,9 @@ function InjectiveAuthorizationPanel({
   debug,
   evmChainOk,
   evmWallet,
+  forwardingState,
+  forwardingStage,
+  onCompleteForwarding,
   onPrepare,
   onSelectSourceWalletMode,
   onSign,
@@ -951,6 +1034,7 @@ function InjectiveAuthorizationPanel({
 }: {
   authorizationSignatureState: ApiState<SignedInjectiveAuthorization>;
   authorizationReady: boolean;
+  canCompleteForwarding: boolean;
   canPrepare: boolean;
   canSign: boolean;
   canSubmit: boolean;
@@ -959,6 +1043,9 @@ function InjectiveAuthorizationPanel({
   debug: InjectiveAuthorizationDebug;
   evmChainOk: boolean;
   evmWallet: InjectiveEvmWalletState;
+  forwardingState: ApiState<CompletedInjectiveForwardingResponse>;
+  forwardingStage: ForwardingStage;
+  onCompleteForwarding: () => void;
   onPrepare: () => void;
   onSelectSourceWalletMode: (mode: InjectiveSourceWalletMode) => void;
   onSign: () => void;
@@ -1054,8 +1141,14 @@ function InjectiveAuthorizationPanel({
             <button className="primary-button" disabled={!canSubmit} onClick={onSubmit} type="button">
               {submittedAuthorizationState.status === "loading" ? "Submitting authorization..." : "Submit authorization"}
             </button>
+            <button className="primary-button" disabled={!canCompleteForwarding} onClick={onCompleteForwarding} type="button">
+              {forwardingState.status === "loading" ? "Burning on Injective..." : "Burn and forward to Solana"}
+            </button>
           </div>
-          <p className="status-banner warning">Current phase: prepare / sign / verify / submit only. CCTP forwarding not implemented in this phase.</p>
+          <p className="status-banner warning">Current phase: prepare / sign / verify / submit / burn-forward.</p>
+          {submittedAuthorizationState.status === "success" && forwardingState.status !== "loading" && forwardingState.status !== "success" ? (
+            <p className="status-banner success">Authorization transaction submitted. CCTP burn not started yet.</p>
+          ) : null}
         </>
       ) : null}
       {preparedAuthorizationState.status === "error" ? <p className="status-banner error">{preparedAuthorizationState.error}</p> : null}
@@ -1087,6 +1180,10 @@ function InjectiveAuthorizationPanel({
       {submittedAuthorizationState.status === "loading" ? <p className="status-banner warning">Status: Submitting authorization</p> : null}
       {submittedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization submitted</p> : null}
       {submittedAuthorizationState.status === "success" ? <p className="status-banner success">This moves the authorized USDC to OmnisRouter&apos;s relayer wallet. OmnisRouter pays Injective gas. CCTP forwarding happens in the next phase.</p> : null}
+      {forwardingState.status === "error" ? <p className="status-banner error">{forwardingState.error}</p> : null}
+      {forwardingState.status === "loading" ? <p className="status-banner warning">Status: Burning on Injective</p> : null}
+      {forwardingStage === "burn-submitted" && forwardingState.status === "success" ? <p className="status-banner success">Status: Burn submitted</p> : null}
+      {forwardingStage === "burn-submitted" && forwardingState.status === "success" ? <p className="status-banner success">Circle Forwarding Service is handling Solana minting.</p> : null}
       {preparedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization prepared</p> : null}
       {authorizationSignatureState.status === "success" ? <p className="status-banner success">Status: User signed authorization</p> : null}
       {verifiedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization verified</p> : null}
@@ -1134,13 +1231,25 @@ function InjectiveAuthorizationPanel({
       ) : null}
       {submittedAuthorizationState.status === "success" ? (
         <DetailList entries={[
-          ["Authorization tx", submittedAuthorizationState.data.authorizationTxHash ? (() => { const hash = submittedAuthorizationState.data.authorizationTxHash!; return <a href={`https://testnet.explorer.injective.network/tx/${hash}`} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a>; })() : "Unavailable"],
+          ["Authorization tx", submittedAuthorizationState.data.authorizationTxHash ? (() => { const hash = submittedAuthorizationState.data.authorizationTxHash!; return <a href={`https://testnet.explorer.injective.network/transaction/${hash}`} target="_blank" rel="noreferrer">{shortenHash(hash, 12)}</a>; })() : "Unavailable"],
           ["Relayer address", submittedAuthorizationState.data.relayerAddress ?? "Unavailable"],
           ["Authorization consumed", submittedAuthorizationState.data.authorizationConsumed ? "Yes" : "No"],
           ["Source EVM address", submittedAuthorizationState.data.sourceEvmAddress ?? "Unavailable"],
           ["Amount", submittedAuthorizationState.data.amountUsdc ? `${submittedAuthorizationState.data.amountUsdc} USDC` : "Unavailable"],
           ["Gas paid by", submittedAuthorizationState.data.gasPaidBy ?? "OmnisRouter"],
           ["Message", submittedAuthorizationState.data.message ?? "Authorization submitted. CCTP burn not attempted in this phase."],
+        ]} />
+      ) : null}
+      {forwardingState.status === "success" ? (
+        <DetailList entries={[
+          ["Authorization tx", forwardingState.data.authorizationTxHash ? <a href={`https://testnet.explorer.injective.network/transaction/${forwardingState.data.authorizationTxHash}`} target="_blank" rel="noreferrer">{shortenHash(forwardingState.data.authorizationTxHash, 12)}</a> : "Unavailable"],
+          ["Approval tx", forwardingState.data.approvalTxHash ? <a href={`https://testnet.explorer.injective.network/transaction/${forwardingState.data.approvalTxHash}`} target="_blank" rel="noreferrer">{shortenHash(forwardingState.data.approvalTxHash, 12)}</a> : "Not needed"],
+          ["Burn tx", forwardingState.data.burnTxHash ? <a href={`https://testnet.explorer.injective.network/transaction/${forwardingState.data.burnTxHash}`} target="_blank" rel="noreferrer">{shortenHash(forwardingState.data.burnTxHash, 12)}</a> : "Unavailable"],
+          ["Relayer address", forwardingState.data.relayerAddress ?? "Unavailable"],
+          ["Source EVM address", forwardingState.data.sourceEvmAddress ?? "Unavailable"],
+          ["Solana recipient ATA", forwardingState.data.solanaRecipientAta ?? "Unavailable"],
+          ["Gas paid by", forwardingState.data.gasPaidBy ?? "OmnisRouter"],
+          ["Message", forwardingState.data.message ?? "USDC burned on Injective. Circle Forwarding Service handles Solana minting."],
         ]} />
       ) : null}
     </div>
