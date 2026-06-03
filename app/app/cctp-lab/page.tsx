@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { DetailList } from "../components";
 import { useProductState } from "../product-state";
 import { injectiveTestnetTxUrl, shortenHash } from "../../../lib/explorers";
+import { showCctpLab } from "../../../lib/server/feature-flags";
 import type { CctpExecutionReceipt } from "../../router-simulator";
 
 type ApiState<T> =
@@ -43,6 +45,8 @@ type TransferInputs = {
 };
 
 export default function CctpLabPage() {
+  if (!showCctpLab()) redirect("/app");
+
   const { gasCredits, recordCctpReceipt, recordRealSponsoredExecution, remainingGasCredits } = useProductState();
   const [amountUsdc, setAmountUsdc] = useState("1.00");
   const [solanaRecipientAddress, setSolanaRecipientAddress] = useState("");
