@@ -4,6 +4,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { Transaction, VersionedTransaction } from "@solana/web3.js";
 import { hashTypedData } from "viem";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { DetailList } from "./components";
 import { INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID, useInjectiveEvmWallet, type InjectiveEvmWalletState } from "./InjectiveEvmWalletProvider";
@@ -356,8 +357,12 @@ export function RealCctpRoutePanel() {
       }
 
       setPreparedBurnState({ status: "success", data: payload });
+      toast.success("Route reviewed", { description: "Solana to Injective CCTP route ready." });
     } catch (error) {
-      setPreparedBurnState({ status: "error", error: humanizeError(error, "Unable to review the route.") });
+      const message = humanizeError(error, "Unable to review the route.");
+
+      toast.error("Route check failed", { description: message });
+      setPreparedBurnState({ status: "error", error: message });
     }
   }
 
@@ -376,9 +381,13 @@ export function RealCctpRoutePanel() {
       setCompleteRelayState({ status: "idle" });
       setRelayStage("idle");
       setWalletSignatureState({ status: "success", data: { message: "USDC authorized. Ready to send with OmnisRouter." } });
+      toast.success("Wallet signed burn", { description: "Solana wallet authorized the USDC transaction." });
     } catch (error) {
       setSignedBurnTransaction(null);
-      setWalletSignatureState({ status: "error", error: humanizeError(error, "Wallet signature test failed. No transaction was sent.") });
+      const message = humanizeError(error, "Wallet signature test failed. No transaction was sent.");
+
+      toast.error("Wallet signing failed", { description: message });
+      setWalletSignatureState({ status: "error", error: message });
     }
   }
 
@@ -407,8 +416,12 @@ export function RealCctpRoutePanel() {
       setSubmitBurnState({ status: "success", data: payload });
       setCompleteRelayState({ status: "idle" });
       setRelayStage("burn-confirmed");
+      toast.success("Burn confirmed", { description: "Solana burn submitted. Waiting for Circle Iris attestation." });
     } catch (error) {
-      setSubmitBurnState({ status: "error", error: error instanceof Error ? error.message : "Signed burn could not be submitted." });
+      const message = error instanceof Error ? error.message : "Signed burn could not be submitted.";
+
+      toast.error("Burn failed", { description: message });
+      setSubmitBurnState({ status: "error", error: message });
     }
   }
 
@@ -438,13 +451,17 @@ export function RealCctpRoutePanel() {
       if (payload.status === "completed") {
         setRelayStage("receipt-saved");
         recordRealSponsoredExecution();
+        toast.success("Relay completed", { description: "USDC minted on Injective via Circle CCTP." });
       } else {
         setRelayStage("polling-iris");
       }
 
       setCompleteRelayState({ status: "success", data: payload });
     } catch (error) {
-      setCompleteRelayState({ status: "error", error: error instanceof Error ? error.message : "Injective relay could not be completed. Retry without burning again." });
+      const message = error instanceof Error ? error.message : "Injective relay could not be completed. Retry without burning again.";
+
+      toast.error("Relay failed", { description: message });
+      setCompleteRelayState({ status: "error", error: message });
     }
   }
 
@@ -510,8 +527,12 @@ export function RealCctpRoutePanel() {
 
       setPreparedAuthorizationInputs(nextAuthorizationInputs);
       setPreparedAuthorizationState({ status: "success", data: payload });
+      toast.success("Authorization prepared", { description: "Review and sign the USDC authorization from your Injective EVM wallet." });
     } catch (error) {
-      setPreparedAuthorizationState({ status: "error", error: error instanceof Error ? error.message : "Unable to prepare gasless authorization." });
+      const message = error instanceof Error ? error.message : "Unable to prepare gasless authorization.";
+
+      toast.error("Preparation failed", { description: message });
+      setPreparedAuthorizationState({ status: "error", error: message });
     }
   }
 
@@ -573,8 +594,12 @@ export function RealCctpRoutePanel() {
           signatureStartsWith0x: signature.startsWith("0x"),
         },
       });
+      toast.success("Authorization signed", { description: "Your wallet signature was received. No transaction has been sent yet." });
     } catch (error) {
-      setAuthorizationSignatureState({ status: "error", error: error instanceof Error ? error.message : "Unable to sign authorization. No transaction was sent." });
+      const message = error instanceof Error ? error.message : "Unable to sign authorization. No transaction was sent.";
+
+      toast.error("Signing failed", { description: message });
+      setAuthorizationSignatureState({ status: "error", error: message });
     }
   }
 
@@ -598,17 +623,24 @@ export function RealCctpRoutePanel() {
       const payload = await response.json() as VerifiedInjectiveAuthorizationResponse;
 
       if (!response.ok || !payload.ok) {
+        const message = payload.error || `API returned status ${response.status}`;
+
+        toast.error("Verification failed", { description: message });
         setVerifiedAuthorizationState({
           status: "error",
-          error: payload.error || `API returned status ${response.status}`,
+          error: message,
           data: payload,
         });
         return;
       }
 
       setVerifiedAuthorizationState({ status: "success", data: payload });
+      toast.success("Authorization verified", { description: "The signature matches your source wallet." });
     } catch (error) {
-      setVerifiedAuthorizationState({ status: "error", error: error instanceof Error ? error.message : "Unable to verify authorization. No transaction was sent." });
+      const message = error instanceof Error ? error.message : "Unable to verify authorization. No transaction was sent.";
+
+      toast.error("Verification failed", { description: message });
+      setVerifiedAuthorizationState({ status: "error", error: message });
     }
   }
 
@@ -636,8 +668,12 @@ export function RealCctpRoutePanel() {
       }
 
       setSubmittedAuthorizationState({ status: "success", data: payload });
+      toast.success("Authorization submitted", { description: "OmnisRouter submitted your authorization and paid the Injective gas." });
     } catch (error) {
-      setSubmittedAuthorizationState({ status: "error", error: error instanceof Error ? error.message : "Unable to submit authorization." });
+      const message = error instanceof Error ? error.message : "Unable to submit authorization.";
+
+      toast.error("Submission failed", { description: message });
+      setSubmittedAuthorizationState({ status: "error", error: message });
     }
   }
 
@@ -675,9 +711,17 @@ export function RealCctpRoutePanel() {
 
       setForwardingStage("burn-submitted");
       setForwardingState({ status: "success", data: payload });
+      toast.success("Burn submitted", { description: "USDC was burned on Injective. Circle Forwarding Service is handling Solana minting." });
+
+      if (payload.receiptId) {
+        toast.success("Receipt saved", { description: "Your wallet-scoped receipt is now available." });
+      }
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to burn and forward USDC.";
+
+      toast.error("Burn failed", { description: message });
       setForwardingStage("idle");
-      setForwardingState({ status: "error", error: error instanceof Error ? error.message : "Unable to burn and forward USDC." });
+      setForwardingState({ status: "error", error: message });
     }
   }
 
@@ -717,7 +761,10 @@ export function RealCctpRoutePanel() {
       setPreflightState({ status: "success", data: payload.preflight });
     } catch (error) {
       setPreflightInputs(null);
-      setPreflightState({ status: "error", error: humanizeError(error, "Unable to complete route check.") });
+      const message = humanizeError(error, "Unable to complete route check.");
+
+      toast.error("Route check failed", { description: message });
+      setPreflightState({ status: "error", error: message });
     }
   }
 
@@ -746,6 +793,7 @@ export function RealCctpRoutePanel() {
 
       setExecutionState({ status: "success", data: payload });
       recordRealSponsoredExecution();
+      toast.success("Transfer executed", { description: "Circle Forwarding Service handles Solana minting." });
 
       if (payload.burnTxHash) {
         const receipt: CctpExecutionReceipt = {
@@ -771,7 +819,10 @@ export function RealCctpRoutePanel() {
         recordCctpReceipt(receipt);
       }
     } catch (error) {
-      setExecutionState({ status: "error", error: humanizeError(error, "Transfer could not be completed. No receipt was recorded unless a burn transaction was submitted.") });
+      const message = humanizeError(error, "Transfer could not be completed. No receipt was recorded unless a burn transaction was submitted.");
+
+      toast.error("Transfer failed", { description: message });
+      setExecutionState({ status: "error", error: message });
     }
   }
 

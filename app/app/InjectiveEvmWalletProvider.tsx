@@ -23,7 +23,7 @@ export type InjectiveEvmWalletState = {
   chainIdDecimal: number;
   connectionStatus: EvmConnectionStatus;
   error: string | null;
-  balance: { status: EvmUsdcBalanceStatus; usdc: string; error: string };
+  balance: { status: EvmUsdcBalanceStatus; usdc: string; inj: string; error: string };
   connect: () => Promise<void>;
   disconnect: () => void;
   switchToInjectiveEvmTestnet: () => Promise<void>;
@@ -46,7 +46,6 @@ function getEthereumProvider(): EthereumProvider {
   return ethereum;
 }
 
-const INJECTIVE_TESTNET_CCTP_USDC_DENOM = "erc20:0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d";
 const INJECTIVE_EVM_TESTNET_RPC_URL = "https://k8s.testnet.json-rpc.injective.network/";
 
 function shortAddress(address: string): string {
@@ -62,42 +61,45 @@ export function InjectiveEvmWalletProvider({ children }: { children: ReactNode }
   const [balance, setBalance] = useState<InjectiveEvmWalletState["balance"]>({
     status: "idle",
     usdc: "0",
+    inj: "0",
     error: "",
   });
 
   const refreshBalance = useCallback(async () => {
     if (!address) {
-      setBalance({ status: "idle", usdc: "0", error: "" });
+      setBalance({ status: "idle", usdc: "0", inj: "0", error: "" });
       return;
     }
 
-    setBalance({ status: "loading", usdc: "0", error: "" });
+    setBalance((prev) => ({ ...prev, status: "loading", error: "" }));
 
     try {
-      const [{ ChainGrpcBankApi }, { Network, getNetworkEndpoints }] = await Promise.all([
-        import("@injectivelabs/sdk-ts/client/chain"),
-        import("@injectivelabs/networks"),
-      ]);
-      const endpoints = getNetworkEndpoints(Network.TestnetSentry ?? Network.Testnet);
-      const bankApi = new ChainGrpcBankApi(endpoints.grpc);
-      const result = await bankApi.fetchBalance({ accountAddress: address, denom: INJECTIVE_TESTNET_CCTP_USDC_DENOM });
-      const rawAmount = result.amount || "0";
-      const amount = BigInt(rawAmount);
-      const base = BigInt(10) ** BigInt(6);
-      const whole = amount / base;
-      const fractional = amount % base;
-      const wholeText = whole.toString();
-      const fractionalText = fractional.toString().padStart(6, "0").slice(0, 2);
-      const usdc = fractionalText ? `${wholeText}.${fractionalText}` : wholeText;
+      const response = await fetch("/api/balances/injective-evm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const data = await response.json() as {
+        ok: boolean;
+        error?: string;
+        injBalanceFormatted?: string | null;
+        usdcBalanceFormatted?: string | null;
+      };
 
-      setBalance({ status: "success", usdc, error: "" });
+      if (!data.ok) {
+        throw new Error(data.error || "Balance API returned an error.");
+      }
+
+      setBalance({
+        status: "success",
+        usdc: data.usdcBalanceFormatted ?? "0",
+        inj: data.injBalanceFormatted ?? "0",
+        error: "",
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (/balance.*not\s*found|not\s*found.*balance|denom.*not\s*found|account.*does\s*not\s*exist/i.test(message)) {
-        setBalance({ status: "success", usdc: "0", error: "" });
-      } else {
-        setBalance({ status: "error", usdc: "0", error: message });
-      }
+
+      setBalance((prev) => ({ ...prev, status: "error", error: message }));
     }
   }, [address]);
 
@@ -177,7 +179,7 @@ export function InjectiveEvmWalletProvider({ children }: { children: ReactNode }
     setChainId("");
     setConnectionStatus("disconnected");
     setError(null);
-    setBalance({ status: "idle", usdc: "0", error: "" });
+    setBalance({ status: "idle", usdc: "0", inj: "0", error: "" });
   }, []);
 
   const switchToInjectiveEvmTestnet = useCallback(async () => {

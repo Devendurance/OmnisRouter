@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Toaster } from "sonner";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import "./globals.css";
 
@@ -15,7 +16,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <Toaster position="bottom-right" richColors closeButton />
+      </body>
     </html>
   );
 }
