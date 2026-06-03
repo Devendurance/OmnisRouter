@@ -4,6 +4,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { isDevelopment, showDebugPanels } from "../../lib/server/feature-flags";
 import { AppHero, DetailList, Metric } from "./components";
 import { useInjectiveEvmWallet, INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX } from "./InjectiveEvmWalletProvider";
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
@@ -95,8 +96,13 @@ export default function DashboardPage() {
           <h2 id="dashboard-title">Wallet state</h2>
           <div className="metric-row"><BalanceMetric label="Native SOL gas balance" value={solBalanceDisplay.value} detail={solBalanceDisplay.detail} note={solBalanceDisplay.note} badges={solBalanceDisplay.badges} action={<button aria-label="Refresh native SOL gas balance" className="secondary-button compact" disabled={!connected || solBalanceState.status === "loading"} onClick={() => { void refreshSolBalance(); }} type="button">Refresh</button>} /><BalanceMetric label="Native INJ gas balance" value={injBalanceDisplay.value} detail={injBalanceDisplay.detail} note={injBalanceDisplay.note} badges={injBalanceDisplay.badges} action={<button aria-label="Refresh native INJ gas balance" className="secondary-button compact" disabled={!injectiveWallet.isConnected || injBalance.state.status === "loading"} onClick={() => { void injBalance.refresh(); }} type="button">Refresh</button>} /><BalanceMetric label="Real Solana USDC balance" value={solanaUsdcBalanceDisplay.value} detail={solanaUsdcBalanceDisplay.detail} note={solanaUsdcBalanceDisplay.note} badges={solanaUsdcBalanceDisplay.badges} action={<button aria-label="Refresh real Solana USDC balance" className="secondary-button compact" disabled={!connected || solanaUsdcBalance.state.status === "loading"} onClick={() => { void solanaUsdcBalance.refresh(); }} type="button">Refresh</button>} /><BalanceMetric label="Real Injective USDC balance" value={injectiveUsdcBalanceDisplay.value} detail={injectiveUsdcBalanceDisplay.detail} note={injectiveUsdcBalanceDisplay.note} badges={injectiveUsdcBalanceDisplay.badges} action={<button aria-label="Refresh real Injective USDC balance" className="secondary-button compact" disabled={!injectiveWallet.isConnected || injectiveUsdcBalance.state.status === "loading"} onClick={() => { void injectiveUsdcBalance.refresh(); }} type="button">Refresh</button>} /></div>
           <p className="status-banner warning">Testnet balances are shown for visibility before execution.</p>
-          <Metric label="Gas credits" value={`${remainingGasCredits}/${gasCredits.dailyLimit}`} detail="Sponsored transfers today" />
-          <DetailList entries={[["Solana wallet", connected ? solanaAddress : "Connect wallet or refresh balance"], ["Injective wallet", injectiveWallet.isConnected ? `${injectiveWallet.wallet ?? "Selected wallet"}: ${injectiveWallet.address}` : "Connect wallet or refresh balance"], ["Coming later", `Base, Arbitrum, and EVM wallet support`], ["Allowed destinations", rules.allowedDestinationChains.join(", ")], ["Approval threshold", `${rules.approvalThreshold} USDC`], ["Router state", rules.emergencyPauseEnabled ? "Emergency paused" : ruleResult.status === "denied" ? "Payment denied" : "Ready"]]} />
+          {isDevelopment ? <Metric label="Gas credits" value={`${remainingGasCredits}/${gasCredits.dailyLimit}`} detail="Sponsored transfers today" /> : null}
+          <DetailList entries={[
+            ["Solana wallet", connected ? solanaAddress : "Connect wallet or refresh balance"],
+            ["Injective wallet", injectiveWallet.isConnected ? `${injectiveWallet.wallet ?? "Selected wallet"}: ${injectiveWallet.address}` : "Connect wallet or refresh balance"],
+            ...(showDebugPanels() ? [["Allowed destinations", rules.allowedDestinationChains.join(", ")]] as [string, string][] : []),
+            ["Router state", rules.emergencyPauseEnabled ? "Emergency paused" : ruleResult.status === "denied" ? "Payment denied" : "Ready"],
+          ]} />
           <div className="button-row"><Link className="primary-button" href="/app/agent">Start payment</Link><Link className="secondary-button" href="/app/rules">Review rules</Link></div>
         </div>
         <div className="dashboard-stack">

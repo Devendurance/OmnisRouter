@@ -10,6 +10,7 @@ import { INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID, use
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
 import { useProductState } from "./product-state";
 import { injectiveTestnetTxUrl, shortenHash } from "../../lib/explorers";
+import { showDebugPanels, showServerFundedRoutes } from "../../lib/server/feature-flags";
 import type { CctpExecutionReceipt } from "../router-simulator";
 
 type ApiState<T> =
@@ -843,6 +844,7 @@ export function RealCctpRoutePanel() {
             canCompleteForwarding={canCompleteForwarding}
             authorizationReady={authorizationReady}
           />
+          {showServerFundedRoutes() ? (
           <ServerFundedExecutionSection
             canExecute={canExecute}
             confirmed={confirmed}
@@ -852,6 +854,7 @@ export function RealCctpRoutePanel() {
             preflightState={preflightState}
             setConfirmed={setConfirmed}
           />
+          ) : null}
         </>
       ) : null}
 
@@ -1068,10 +1071,8 @@ function InjectiveAuthorizationPanel({
 
   return (
     <div className="cctp-result-panel">
-      <p className="eyebrow">User-owned gasless authorization</p>
-      <p className="status-banner success">Execution mode: User-authorized, OmnisRouter-sponsored</p>
-      <p className="status-banner success">Choose one Injective source wallet mode for this route.</p>
-      <p className="status-banner warning">Phase 1 only: no transaction is sent, no USDC moves, and no receipt is saved.</p>
+      <p className="eyebrow">User-owned gasless route</p>
+      <p className="status-banner success">Your Injective EVM wallet authorizes USDC with a signature. OmnisRouter pays gas and routes through CCTP.</p>
       <div className="option-grid" aria-label="Injective source wallet mode">
         <button className={`option-card ${sourceWalletMode === "native-injective" ? "selected" : ""}`} onClick={() => onSelectSourceWalletMode("native-injective")} type="button">
           <strong>Use native Injective wallet</strong>
@@ -1110,7 +1111,7 @@ function InjectiveAuthorizationPanel({
             ["Requested amount", requestedAmountText],
             ["OmnisRouter relayer/sponsor", preparedAuthorizationState.status === "success" ? preparedAuthorizationState.data.relayerAddress ?? "Unavailable" : "Available after prepare"],
           ]} />
-          {preparedAuthorizationState.status === "success" && preparedAuthorizationState.data.domainDebug ? (
+          {preparedAuthorizationState.status === "success" && preparedAuthorizationState.data.domainDebug && showDebugPanels() ? (
             <>
               <DetailList entries={[
                 ["USDC name", preparedAuthorizationState.data.domainDebug.name ?? "Unavailable"],
@@ -1146,50 +1147,66 @@ function InjectiveAuthorizationPanel({
               {forwardingState.status === "loading" ? "Burning on Injective..." : "Burn and forward to Solana"}
             </button>
           </div>
-          <p className="status-banner warning">Current phase: prepare / sign / verify / submit / burn-forward.</p>
-          {submittedAuthorizationState.status === "success" && forwardingState.status !== "loading" && forwardingState.status !== "success" ? (
-            <p className="status-banner success">Authorization transaction submitted. CCTP burn not started yet.</p>
+          {!canPrepare && sourceWalletMode === "injective-evm" ? (
+            <p className="status-banner warning">
+              {!evmWallet.isConnected ? "Connect Injective EVM wallet from the Dashboard first." :
+               !evmChainOk ? "Switch your EVM wallet to Injective EVM testnet." :
+               "Enter a USDC amount and valid Solana recipient first."}
+            </p>
+          ) : null}
+          {canPrepare && preparedAuthorizationState.status === "idle" ? (
+            <p className="status-banner warning">Prepare authorization first.</p>
+          ) : null}
+          {preparedAuthorizationState.status === "success" && !authorizationReady ? (
+            <p className="status-banner warning">Authorization details changed. Prepare again before signing.</p>
+          ) : null}
+          {authorizationReady && authorizationSignatureState.status === "idle" && !canSign ? (
+            <p className="status-banner warning">Sign authorization first.</p>
+          ) : null}
+          {authorizationSignatureState.status === "success" && verifiedAuthorizationState.status === "idle" ? (
+            <p className="status-banner warning">Verify authorization first.</p>
+          ) : null}
+          {verifiedAuthorizationState.status === "success" && submittedAuthorizationState.status === "idle" && !canSubmit ? (
+            <p className="status-banner warning">Submit authorization first.</p>
           ) : null}
         </>
       ) : null}
       {preparedAuthorizationState.status === "error" ? <p className="status-banner error">{preparedAuthorizationState.error}</p> : null}
-      {preparedAuthorizationState.status === "success" && !authorizationReady ? <p className="status-banner warning">Authorization details changed. Prepare gasless authorization again before signing.</p> : null}
       {authorizationSignatureState.status === "error" ? <p className="status-banner error">{authorizationSignatureState.error}</p> : null}
       {verifiedAuthorizationState.status === "error" ? <p className="status-banner error">{verifiedAuthorizationState.error}</p> : null}
-      {verifiedAuthorizationState.status === "error" && verifiedAuthorizationState.data?.addressesMatch === false ? (
-        <>
-          <p className="status-banner error">The wallet that signed this authorization is not the same wallet used as the source address.</p>
-          <DetailList entries={[
-            ["Source EVM address", verifiedAuthorizationState.data.sourceEvmAddress ?? "Unavailable"],
-            ["Recovered signer", verifiedAuthorizationState.data.recoveredSigner ?? "Unavailable"],
-            ["Active EVM wallet address", evmWallet.address || "Unavailable"],
-            ["Prepared typed data hash", verifiedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
-            ["Verify typed data hash", verifiedAuthorizationState.data.verifyTypedDataHash ?? "Unavailable"],
-            ["Hashes match", verifiedAuthorizationState.data.hashesMatch ? "Yes" : "No"],
-            ["Signature length", String(verifiedAuthorizationState.data.signatureLength ?? "")],
-            ["Signature starts with 0x", verifiedAuthorizationState.data.signatureStartsWith0x ? "Yes" : "No"],
-            ["Typed data domain", formatJson(verifiedAuthorizationState.data.typedDataDomain)],
-            ["Typed data primary type", verifiedAuthorizationState.data.typedDataPrimaryType ?? "Unavailable"],
-            ["Message from", verifiedAuthorizationState.data.typedDataMessage?.from ?? "Unavailable"],
-            ["Message to", verifiedAuthorizationState.data.typedDataMessage?.to ?? "Unavailable"],
-            ["Message value", verifiedAuthorizationState.data.typedDataMessage?.value ?? "Unavailable"],
-            ["Message nonce", verifiedAuthorizationState.data.typedDataMessage?.nonce ?? "Unavailable"],
-          ]} />
-        </>
-      ) : null}
       {submittedAuthorizationState.status === "error" ? <p className="status-banner error">{submittedAuthorizationState.error}</p> : null}
-      {submittedAuthorizationState.status === "loading" ? <p className="status-banner warning">Status: Submitting authorization</p> : null}
-      {submittedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization submitted</p> : null}
-      {submittedAuthorizationState.status === "success" ? <p className="status-banner success">This moves the authorized USDC to OmnisRouter&apos;s relayer wallet. OmnisRouter pays Injective gas. CCTP forwarding happens in the next phase.</p> : null}
       {forwardingState.status === "error" ? <p className="status-banner error">{forwardingState.error}</p> : null}
-      {forwardingState.status === "loading" ? <p className="status-banner warning">Status: Burning on Injective</p> : null}
-      {forwardingStage === "burn-submitted" && forwardingState.status === "success" ? <p className="status-banner success">Status: Burn submitted</p> : null}
-      {forwardingStage === "burn-submitted" && forwardingState.status === "success" ? <p className="status-banner success">Circle Forwarding Service is handling Solana minting.</p> : null}
-      {preparedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization prepared</p> : null}
-      {authorizationSignatureState.status === "success" ? <p className="status-banner success">Status: User signed authorization</p> : null}
-      {verifiedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization verified</p> : null}
-      {verifiedAuthorizationState.status === "success" && submittedAuthorizationState.status !== "success" && forwardingState.status !== "success" ? (
-        <p className="status-banner success">Status: No transaction sent</p>
+
+      {verifiedAuthorizationState.status === "error" && verifiedAuthorizationState.data?.addressesMatch === false && showDebugPanels() ? (
+        <DetailList entries={[
+          ["Source EVM address", verifiedAuthorizationState.data.sourceEvmAddress ?? "Unavailable"],
+          ["Recovered signer", verifiedAuthorizationState.data.recoveredSigner ?? "Unavailable"],
+          ["Active EVM wallet address", evmWallet.address || "Unavailable"],
+          ["Prepared typed data hash", verifiedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
+          ["Verify typed data hash", verifiedAuthorizationState.data.verifyTypedDataHash ?? "Unavailable"],
+          ["Hashes match", verifiedAuthorizationState.data.hashesMatch ? "Yes" : "No"],
+        ]} />
+      ) : null}
+
+      {(preparedAuthorizationState.status === "success" || authorizationSignatureState.status === "success" || verifiedAuthorizationState.status === "success") ? (
+        <div className="cctp-result-panel">
+          <p className="eyebrow">Progress</p>
+          <DetailList entries={[
+            ["Authorization prepared", preparedAuthorizationState.status === "success" ? "Done" : preparedAuthorizationState.status === "loading" ? "..." : "Pending"],
+            ["User signed authorization", authorizationSignatureState.status === "success" ? "Done" : authorizationSignatureState.status === "loading" ? "..." : "Pending"],
+            ["Authorization verified", verifiedAuthorizationState.status === "success" ? "Done" : verifiedAuthorizationState.status === "loading" ? "..." : "Pending"],
+            ["Authorization submitted", submittedAuthorizationState.status === "success" ? "Done" : submittedAuthorizationState.status === "loading" ? "..." : "Pending"],
+            ["Burn submitted", forwardingStage === "burn-submitted" && forwardingState.status === "success" ? "Done" : forwardingState.status === "loading" ? "..." : "Pending"],
+          ]} />
+          {forwardingStage === "burn-submitted" && forwardingState.status === "success" ? (
+            <p className="status-banner success">Circle Forwarding Service is handling Solana minting.</p>
+          ) : null}
+          {forwardingState.status === "success" && forwardingState.data.receiptId ? (
+            <p className="status-banner success">Receipt saved</p>
+          ) : forwardingState.status === "success" && !forwardingState.data.receiptId ? (
+            <p className="status-banner warning">Burn submitted, but receipt save failed. Keep your transaction hashes.</p>
+          ) : null}
+        </div>
       ) : null}
       {preparedAuthorizationState.status === "success" ? (
         <DetailList entries={[
@@ -1199,38 +1216,47 @@ function InjectiveAuthorizationPanel({
           ["Requested amount", amount(preparedAuthorizationState.data.requestedAmount)],
           ["Authorization type", preparedAuthorizationState.data.authorizationType ?? "EIP-3009 transferWithAuthorization"],
           ["USDC value", preparedAuthorizationState.data.value ?? "Unavailable"],
-          ["Prepared typed data hash", preparedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
+          ...(showDebugPanels() ? [["Prepared typed data hash", preparedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"]] as [string, string][] : []),
           ["Solana recipient ATA", preparedAuthorizationState.data.solanaRecipientAta ?? "Unavailable"],
           ["Gas paid by", preparedAuthorizationState.data.gasPaidBy ?? "OmnisRouter"],
           ["Note", preparedAuthorizationState.data.note ?? "User signs authorization only. No transaction is sent in this phase."],
         ]} />
       ) : null}
       {authorizationSignatureState.status === "success" ? (
-        <DetailList entries={[
-          ["Signature", shortenHash(authorizationSignatureState.data.signature, 12)],
-          ["Signing method", authorizationSignatureState.data.signingMethod],
-          ["Signing params order", authorizationSignatureState.data.signingParamsOrder],
-          ["Active EVM signer", authorizationSignatureState.data.activeEvmAddress],
-          ["Prepared typed data hash", authorizationSignatureState.data.preparedTypedDataHash],
-          ["Signature length", String(authorizationSignatureState.data.signatureLength)],
-          ["Signature starts with 0x", authorizationSignatureState.data.signatureStartsWith0x ? "Yes" : "No"],
-        ]} />
+        <DetailList entries={(showDebugPanels()
+          ? [
+              ["Signature", shortenHash(authorizationSignatureState.data.signature, 12)],
+              ["Signing method", authorizationSignatureState.data.signingMethod],
+              ["Signing params order", authorizationSignatureState.data.signingParamsOrder],
+              ["Active EVM signer", authorizationSignatureState.data.activeEvmAddress],
+              ["Prepared typed data hash", authorizationSignatureState.data.preparedTypedDataHash],
+              ["Signature length", String(authorizationSignatureState.data.signatureLength)],
+              ["Signature starts with 0x", authorizationSignatureState.data.signatureStartsWith0x ? "Yes" : "No"],
+            ]
+          : [
+              ["Signature", shortenHash(authorizationSignatureState.data.signature, 12)],
+            ])} />
       ) : null}
       {verifiedAuthorizationState.status === "success" ? (
-        <DetailList entries={[
-          ["Recovered signer", verifiedAuthorizationState.data.recoveredSigner ?? "Unavailable"],
-          ["Active EVM signer", verifiedAuthorizationState.data.activeEvmAddress ?? "Unavailable"],
-          ["Prepared typed data hash", verifiedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
-          ["Verify typed data hash", verifiedAuthorizationState.data.verifyTypedDataHash ?? "Unavailable"],
-          ["Hashes match", verifiedAuthorizationState.data.hashesMatch ? "Yes" : "No"],
-          ["Signature length", String(verifiedAuthorizationState.data.signatureLength ?? "")],
-          ["Signature starts with 0x", verifiedAuthorizationState.data.signatureStartsWith0x ? "Yes" : "No"],
-          ["Typed data domain", formatJson(verifiedAuthorizationState.data.typedDataDomain)],
-          ["Typed data primary type", verifiedAuthorizationState.data.typedDataPrimaryType ?? "Unavailable"],
-          ["Typed data message", formatJson(verifiedAuthorizationState.data.typedDataMessage)],
-          ["Authorization valid", verifiedAuthorizationState.data.authorizationValid ? "Yes" : "No"],
-          ["Message", verifiedAuthorizationState.data.message ?? "Authorization signature verified. No transaction sent."],
-        ]} />
+        <DetailList entries={(showDebugPanels()
+          ? [
+              ["Recovered signer", verifiedAuthorizationState.data.recoveredSigner ?? "Unavailable"],
+              ["Active EVM signer", verifiedAuthorizationState.data.activeEvmAddress ?? "Unavailable"],
+              ["Prepared typed data hash", verifiedAuthorizationState.data.preparedTypedDataHash ?? "Unavailable"],
+              ["Verify typed data hash", verifiedAuthorizationState.data.verifyTypedDataHash ?? "Unavailable"],
+              ["Hashes match", verifiedAuthorizationState.data.hashesMatch ? "Yes" : "No"],
+              ["Signature length", String(verifiedAuthorizationState.data.signatureLength ?? "")],
+              ["Signature starts with 0x", verifiedAuthorizationState.data.signatureStartsWith0x ? "Yes" : "No"],
+              ["Typed data domain", formatJson(verifiedAuthorizationState.data.typedDataDomain)],
+              ["Typed data primary type", verifiedAuthorizationState.data.typedDataPrimaryType ?? "Unavailable"],
+              ["Typed data message", formatJson(verifiedAuthorizationState.data.typedDataMessage)],
+              ["Authorization valid", verifiedAuthorizationState.data.authorizationValid ? "Yes" : "No"],
+              ["Message", verifiedAuthorizationState.data.message ?? (submittedAuthorizationState.status === "success" ? "Authorization signature verified and submitted." : "Authorization signature verified. No transaction sent.")],
+            ]
+          : [
+              ["Authorization valid", verifiedAuthorizationState.data.authorizationValid ? "Yes" : "No"],
+              ["Message", verifiedAuthorizationState.data.message ?? (submittedAuthorizationState.status === "success" ? "Authorization signature verified and submitted." : "Authorization signature verified. No transaction sent.")],
+            ])} />
       ) : null}
       {submittedAuthorizationState.status === "success" ? (
         <DetailList entries={[
@@ -1256,15 +1282,9 @@ function InjectiveAuthorizationPanel({
         ]} />
       ) : null}
       {forwardingState.status === "success" && forwardingState.data.receiptId ? (
-        <>
-          <p className="status-banner success">Receipt saved</p>
-          <div className="button-row cctp-action-row">
-            <Link className="primary-button" href="/app/receipt">&rarr; View receipt</Link>
-          </div>
-        </>
-      ) : null}
-      {forwardingState.status === "success" && !forwardingState.data.receiptId ? (
-        <p className="status-banner warning">Burn submitted, but receipt save failed. Keep your transaction hashes.</p>
+        <div className="button-row cctp-action-row">
+          <Link className="primary-button" href="/app/receipt">&rarr; View receipt</Link>
+        </div>
       ) : null}
     </div>
   );

@@ -245,6 +245,8 @@ function buildReceipt(validation: ValidatedCompleteRelayRequest, relayTxHash: st
     estimated_received_usdc: validation.amountUsdc,
     gas_sponsor: "OmnisRouter",
     injective_recipient_address: validation.injectiveRecipientAddress,
+    owner_wallet_address: validation.sourceSolanaAddress,
+    owner_wallet_type: "solana",
     raw_receipt: buildRawReceipt(validation, relayTxHash, status),
     receive_message_tx: relayTxHash,
     relay_tx: relayTxHash,

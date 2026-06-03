@@ -24,6 +24,8 @@ type ReceiptInsert = {
   receive_message_tx?: string | null;
   authorization_tx?: string | null;
   execution_mode?: string | null;
+  owner_wallet_address?: string | null;
+  owner_wallet_type?: string | null;
   relayer_address?: string | null;
   gas_sponsor?: string | null;
   raw_receipt?: JsonRecord;
@@ -43,6 +45,8 @@ type OmnisReceiptInput = {
   forwardingFeeUsdc?: string | null;
   injectiveRecipientAddress?: string | null;
   message?: string;
+  ownerWalletAddress?: string | null;
+  ownerWalletType?: string | null;
   rawReceipt?: JsonRecord;
   relayTxHash?: string | null;
   route: string;
@@ -82,6 +86,24 @@ export async function listOmnisReceipts() {
 
   if (error) {
     throw new Error(`Unable to load OmnisRouter receipts: ${error.message}`);
+  }
+
+  return (data ?? []) as OmnisReceiptRow[];
+}
+
+export async function listOmnisReceiptsByOwner(walletAddress: string, walletType: string) {
+  const supabase = createSupabaseServiceRoleClient();
+
+  const { data, error } = await supabase
+    .from("omnis_receipts")
+    .select("*")
+    .eq("owner_wallet_type", walletType)
+    .ilike("owner_wallet_address", walletAddress)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    throw new Error(`Unable to load OmnisRouter receipts by owner: ${error.message}`);
   }
 
   return (data ?? []) as OmnisReceiptRow[];
@@ -131,7 +153,10 @@ export async function persistOmnisReceiptBestEffort(receipt: OmnisReceiptInput) 
       destination_address: receipt.solanaRecipientWallet ?? receipt.injectiveRecipientAddress ?? null,
       destination_chain: receipt.destinationChain,
       estimated_received_usdc: receipt.estimatedRecipientAmountUsdc ?? null,
+      execution_mode: receipt.ownerWalletType ? undefined : "server-funded-testnet-executor",
       injective_recipient_address: receipt.injectiveRecipientAddress ?? null,
+      owner_wallet_address: receipt.ownerWalletAddress ?? null,
+      owner_wallet_type: receipt.ownerWalletType ?? "executor-demo",
       raw_receipt: receipt.rawReceipt ?? withoutUndefined({
         amountUsdc: receipt.amountUsdc,
         approvalTxHash: receipt.approvalTxHash ?? null,
@@ -195,6 +220,8 @@ export async function persistUserOwnedForwardingReceiptBestEffort(receipt: UserO
       destination_address: receipt.solanaRecipientAddress,
       destination_chain: "Solana",
       execution_mode: "user-authorized-server-sponsored",
+      owner_wallet_address: receipt.sourceEvmAddress,
+      owner_wallet_type: "injective-evm",
       relayer_address: receipt.relayerAddress,
       route: "injective-to-solana",
       solana_recipient_address: receipt.solanaRecipientAddress,
