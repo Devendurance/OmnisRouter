@@ -45,12 +45,18 @@ function humanizeStatus(status: string): string {
   return status.replace(/-/g, " ");
 }
 
+function isUserOwnedInjectiveToSolana(receipt: OmnisReceiptRow) {
+  return receipt.route === "injective-to-solana" && receipt.execution_mode === "user-authorized-server-sponsored";
+}
+
 function isSolanaToInjective(receipt: OmnisReceiptRow) {
   return receipt.route === "solana-to-injective";
 }
 
 function routeLabel(receipt: OmnisReceiptRow) {
-  return isSolanaToInjective(receipt) ? "Solana -> Injective" : "Injective -> Solana";
+  if (isSolanaToInjective(receipt)) return "Solana -> Injective";
+  if (isUserOwnedInjectiveToSolana(receipt)) return "Injective -> Solana (User-owned)";
+  return "Injective -> Solana";
 }
 
 function hasValue(value: ReactNode) {
@@ -66,6 +72,25 @@ function amount(value: string | number | null | undefined, fallback = "0") {
 }
 
 function receiptEntries(receipt: OmnisReceiptRow): [string, ReactNode][] {
+  if (isUserOwnedInjectiveToSolana(receipt)) {
+    return visibleEntries([
+      ["Created", formatTime(receipt.created_at)],
+      ["Status", humanizeStatus(receipt.status)],
+      ["Execution mode", "User-authorized, OmnisRouter-sponsored"],
+      ["Requested amount", `${amount(receipt.amount_usdc)} USDC`],
+      ["CCTP fee", `${amount(receipt.cctp_fee_usdc)} USDC`],
+      ["Estimated received", `${amount(receipt.estimated_received_usdc)} USDC`],
+      ["Gas sponsor", receipt.gas_sponsor ?? "OmnisRouter"],
+      ["User EVM source address", receipt.source_address],
+      ["OmnisRouter relayer/sponsor", receipt.relayer_address],
+      ["Solana recipient", receipt.solana_recipient_address ?? receipt.destination_address],
+      ["Solana ATA", receipt.solana_usdc_ata],
+      ["Authorization Tx", injectiveTxLink(receipt.authorization_tx, "Pending")],
+      ["Approval Tx", injectiveTxLink(receipt.approval_tx, "Not needed")],
+      ["Burn Tx", injectiveTxLink(receipt.burn_tx, "Pending")],
+    ]);
+  }
+
   if (isSolanaToInjective(receipt)) {
     return visibleEntries([
       ["Created", formatTime(receipt.created_at)],
@@ -97,6 +122,10 @@ function receiptEntries(receipt: OmnisReceiptRow): [string, ReactNode][] {
 }
 
 function receiptNote(receipt: OmnisReceiptRow) {
+  if (isUserOwnedInjectiveToSolana(receipt)) {
+    return "User authorized USDC movement with EIP-3009. OmnisRouter paid Injective gas and forwarded through Circle CCTP. Solana mint is handled by Circle's Forwarding Service.";
+  }
+
   if (!isSolanaToInjective(receipt)) {
     return "Solana mint is handled by Circle's Forwarding Service. OmnisRouter stores the Injective approval and burn transaction proof.";
   }

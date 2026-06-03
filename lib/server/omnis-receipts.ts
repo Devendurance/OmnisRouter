@@ -22,6 +22,9 @@ type ReceiptInsert = {
   burn_tx?: string | null;
   relay_tx?: string | null;
   receive_message_tx?: string | null;
+  authorization_tx?: string | null;
+  execution_mode?: string | null;
+  relayer_address?: string | null;
   gas_sponsor?: string | null;
   raw_receipt?: JsonRecord;
 };
@@ -167,4 +170,55 @@ export function withoutUndefined<T extends JsonRecord>(value: T): JsonRecord {
   return Object.fromEntries(
     Object.entries(value).filter(([, currentValue]) => currentValue !== undefined),
   );
+}
+
+type UserOwnedInjectiveToSolanaReceiptInput = {
+  amountUsdc: string;
+  approvalTxHash?: string | null;
+  authorizationTxHash: string;
+  burnTxHash: string;
+  forwardingFeeUsdc?: string | null;
+  relayerAddress: string;
+  solanaRecipientAddress: string;
+  solanaRecipientAta: string;
+  sourceEvmAddress: string;
+};
+
+export async function persistUserOwnedForwardingReceiptBestEffort(receipt: UserOwnedInjectiveToSolanaReceiptInput) {
+  try {
+    return await insertOmnisReceipt({
+      amount_usdc: receipt.amountUsdc,
+      approval_tx: receipt.approvalTxHash ?? null,
+      authorization_tx: receipt.authorizationTxHash,
+      burn_tx: receipt.burnTxHash,
+      cctp_fee_usdc: receipt.forwardingFeeUsdc ?? null,
+      destination_address: receipt.solanaRecipientAddress,
+      destination_chain: "Solana",
+      execution_mode: "user-authorized-server-sponsored",
+      relayer_address: receipt.relayerAddress,
+      route: "injective-to-solana",
+      solana_recipient_address: receipt.solanaRecipientAddress,
+      solana_usdc_ata: receipt.solanaRecipientAta,
+      source_address: receipt.sourceEvmAddress,
+      source_chain: "Injective EVM",
+      status: "forwarding-submitted",
+      raw_receipt: withoutUndefined({
+        amountUsdc: receipt.amountUsdc,
+        approvalTxHash: receipt.approvalTxHash ?? null,
+        authorizationTxHash: receipt.authorizationTxHash,
+        burnTxHash: receipt.burnTxHash,
+        forwardingFeeUsdc: receipt.forwardingFeeUsdc ?? null,
+        relayerAddress: receipt.relayerAddress,
+        route: "injective-to-solana",
+        solanaRecipientAddress: receipt.solanaRecipientAddress,
+        solanaUsdcAta: receipt.solanaRecipientAta,
+        sourceChain: "Injective EVM",
+        sourceEvmAddress: receipt.sourceEvmAddress,
+        status: "forwarding-submitted",
+      }),
+    });
+  } catch (error) {
+    console.error("OmnisRouter user-owned receipt persistence skipped:", error instanceof Error ? error.message : error);
+    return null;
+  }
 }

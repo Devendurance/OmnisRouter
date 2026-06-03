@@ -174,6 +174,7 @@ type CompletedInjectiveForwardingResponse = {
   authorizationTxHash?: string;
   approvalTxHash?: string | null;
   burnTxHash?: string;
+  receiptId?: string | null;
   sourceEvmAddress?: string;
   relayerAddress?: string;
   amountUsdc?: string;
@@ -1187,7 +1188,9 @@ function InjectiveAuthorizationPanel({
       {preparedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization prepared</p> : null}
       {authorizationSignatureState.status === "success" ? <p className="status-banner success">Status: User signed authorization</p> : null}
       {verifiedAuthorizationState.status === "success" ? <p className="status-banner success">Status: Authorization verified</p> : null}
-      {verifiedAuthorizationState.status === "success" ? <p className="status-banner success">Status: No transaction sent</p> : null}
+      {verifiedAuthorizationState.status === "success" && submittedAuthorizationState.status !== "success" && forwardingState.status !== "success" ? (
+        <p className="status-banner success">Status: No transaction sent</p>
+      ) : null}
       {preparedAuthorizationState.status === "success" ? (
         <DetailList entries={[
           ["EIP-3009 source EVM address", evmWallet.address || preparedAuthorizationState.data.from || "Unavailable"],
@@ -1251,6 +1254,17 @@ function InjectiveAuthorizationPanel({
           ["Gas paid by", forwardingState.data.gasPaidBy ?? "OmnisRouter"],
           ["Message", forwardingState.data.message ?? "USDC burned on Injective. Circle Forwarding Service handles Solana minting."],
         ]} />
+      ) : null}
+      {forwardingState.status === "success" && forwardingState.data.receiptId ? (
+        <>
+          <p className="status-banner success">Receipt saved</p>
+          <div className="button-row cctp-action-row">
+            <Link className="primary-button" href="/app/receipt">&rarr; View receipt</Link>
+          </div>
+        </>
+      ) : null}
+      {forwardingState.status === "success" && !forwardingState.data.receiptId ? (
+        <p className="status-banner warning">Burn submitted, but receipt save failed. Keep your transaction hashes.</p>
       ) : null}
     </div>
   );

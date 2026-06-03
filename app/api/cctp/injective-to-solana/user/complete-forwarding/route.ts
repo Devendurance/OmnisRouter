@@ -32,6 +32,7 @@ import {
   ZERO_BYTES32,
 } from "../../../../../../lib/server/cctp/injective-to-solana";
 import { createPublicClient, createWalletClient } from "viem";
+import { persistUserOwnedForwardingReceiptBestEffort } from "../../../../../../lib/server/omnis-receipts";
 
 const USDC_DECIMALS = 6;
 
@@ -268,6 +269,7 @@ export async function POST(request: Request) {
     }
 
     stage = "burn-receipt";
+    let receiptId: string | null = null;
 
     try {
       const burnReceipt = await publicClient.waitForTransactionReceipt({ hash: burnTxHash });
@@ -293,6 +295,17 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
+    receiptId = await persistUserOwnedForwardingReceiptBestEffort({
+      amountUsdc,
+      approvalTxHash,
+      authorizationTxHash,
+      burnTxHash,
+      relayerAddress,
+      solanaRecipientAddress,
+      solanaRecipientAta: effectiveAta || "",
+      sourceEvmAddress,
+    });
+
     return NextResponse.json(toJsonSafe({
       ok: true,
       route: "injective-to-solana",
@@ -301,13 +314,14 @@ export async function POST(request: Request) {
       authorizationTxHash,
       approvalTxHash,
       burnTxHash,
+      receiptId,
       sourceEvmAddress,
       relayerAddress,
       amountUsdc,
       solanaRecipientAddress,
       solanaRecipientAta: effectiveAta || undefined,
       gasPaidBy: "OmnisRouter",
-      message: "USDC was burned on Injective. Circle Forwarding Service is handling Solana minting. Receipt persistence happens in the next phase.",
+      message: "USDC was burned on Injective. Circle Forwarding Service is handling Solana minting.",
     }));
   } catch (error) {
     return NextResponse.json({
