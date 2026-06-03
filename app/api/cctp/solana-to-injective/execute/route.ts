@@ -12,6 +12,7 @@ import {
   rollbackSponsoredGasCredit,
 } from "../../../../../lib/server/gas-credit-limiter";
 import { persistOmnisReceiptBestEffort, withoutUndefined } from "../../../../../lib/server/omnis-receipts";
+import { serverFundedExecutionEnabled } from "../../../../../lib/server/feature-flags";
 
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_SOLANA_TO_INJECTIVE";
@@ -31,6 +32,10 @@ export async function POST(request: Request) {
   let reservedLimiterKey: string | null = null;
 
   try {
+    if (!serverFundedExecutionEnabled) {
+      return NextResponse.json({ ok: false, error: "Server-funded execution is disabled." }, { status: 403 });
+    }
+
     const body = await request.json() as ExecuteRequestBody;
     const validation = validateBody(body);
     lastValidation = validation;

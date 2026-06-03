@@ -16,29 +16,29 @@ import { privateKeyToAccount } from "viem/accounts";
 const INJECTIVE_TESTNET_EVM_RPC_URL = "https://k8s.testnet.json-rpc.injective.network/";
 const INJECTIVE_TESTNET_EVM_CHAIN_ID = 1439;
 const USDC_DECIMALS = 6;
-const MIN_FINALITY_THRESHOLD = 2000;
+export const MIN_FINALITY_THRESHOLD = 2000;
 const MAX_FEE_RETRY_COUNT = 3;
 const MAX_FEE_RETRY_DELAY_MS = 1000;
-const ZERO_BYTES32 = `0x${"0".repeat(64)}` as const;
+export const ZERO_BYTES32 = `0x${"0".repeat(64)}` as const;
 
-const CCTP_DOMAINS = {
+export const CCTP_DOMAINS = {
   Solana: 5,
   Injective: 29,
 } as const;
 
-const INJECTIVE_TESTNET_CCTP = {
+export const INJECTIVE_TESTNET_CCTP = {
   USDC: "0x0C382e685bbeeFE5d3d9C29e29E341fEE8E84C5d",
   TokenMessengerV2: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
 } as const;
 
-const SOLANA_DEVNET_CCTP = {
+export const SOLANA_DEVNET_CCTP = {
   UsdcMint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
 } as const;
 
 const CIRCLE_SANDBOX_FORWARD_FEE_URL = `https://iris-api-sandbox.circle.com/v2/burn/USDC/fees/${CCTP_DOMAINS.Injective}/${CCTP_DOMAINS.Solana}?forward=true`;
 const CCTP_FORWARD_MAGIC = "cctp-forward";
 
-const erc20Abi = [
+export const erc20Abi = [
   {
     type: "function",
     name: "approve",
@@ -68,7 +68,7 @@ const erc20Abi = [
   },
 ] as const;
 
-const tokenMessengerV2Abi = [
+export const tokenMessengerV2Abi = [
   {
     type: "function",
     name: "depositForBurnWithHook",
@@ -125,7 +125,7 @@ export type InjectiveToSolanaCctpPreflight = {
   fallbackFeeWarning?: string;
 };
 
-type ForwardingFeeEstimate = {
+export type ForwardingFeeEstimate = {
   explanation?: string;
   feeOptions?: Array<{
     finalityThreshold?: string;
@@ -490,11 +490,11 @@ function getSolanaUsdcAta(solanaWalletAddress: string) {
   return getAssociatedTokenAddressSync(mint, owner, true);
 }
 
-function encodeSolanaAtaAsBytes32(solanaWalletAddress: string) {
+export function encodeSolanaAtaAsBytes32(solanaWalletAddress: string) {
   return publicKeyToBytes32Hex(getSolanaUsdcAta(solanaWalletAddress));
 }
 
-function buildForwardHookDataWithAtaCreation(solanaWalletAddress: string) {
+export function buildForwardHookDataWithAtaCreation(solanaWalletAddress: string) {
   const wallet = new PublicKey(solanaWalletAddress);
   const magic = Buffer.alloc(24);
   magic.write(CCTP_FORWARD_MAGIC, "ascii");
@@ -526,7 +526,7 @@ function publicKeyToBytes32Hex(publicKey: PublicKey) {
   return `0x${Buffer.from(bytes).toString("hex")}`;
 }
 
-async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boolean } = {}): Promise<ForwardingFeeEstimate> {
+export async function getForwardingFeeEstimate(options: { includeRecipientSetup?: boolean } = {}): Promise<ForwardingFeeEstimate> {
   const url = options.includeRecipientSetup
     ? `${CIRCLE_SANDBOX_FORWARD_FEE_URL}&includeRecipientSetup=true`
     : CIRCLE_SANDBOX_FORWARD_FEE_URL;
@@ -683,7 +683,7 @@ function computeMaxForwardFee(feeOptions: Array<{ high?: string; minimumFee?: st
   return maxFee === null ? undefined : maxFee.toString();
 }
 
-function hasForwardingMaxFee(feeEstimate: Awaited<ReturnType<typeof getForwardingFeeEstimate>>): feeEstimate is Awaited<ReturnType<typeof getForwardingFeeEstimate>> & { maxFee: string } {
+export function hasForwardingMaxFee(feeEstimate: Awaited<ReturnType<typeof getForwardingFeeEstimate>>): feeEstimate is Awaited<ReturnType<typeof getForwardingFeeEstimate>> & { maxFee: string } {
   return "maxFee" in feeEstimate && typeof feeEstimate.maxFee === "string" && feeEstimate.maxFee.length > 0;
 }
 

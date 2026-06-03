@@ -3,13 +3,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as anchor from "@coral-xyz/anchor";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import {
   createPublicClient,
   createWalletClient,
   defineChain,
   http,
-  parseUnits,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -28,6 +27,7 @@ const TOKEN_MESSENGER_MINTER_V2_PROGRAM_ID = "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFs
 const MESSAGE_TRANSMITTER_V2_PROGRAM_ID = "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC";
 const SOLANA_DEVNET_USDC_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const DESTINATION_DOMAIN = 29;
+const SPONSOR_EVENT_RENT_ESTIMATE_BYTES = 10_000;
 
 const INJECTIVE_TESTNET_EVM_RPC_URL = "https://k8s.testnet.json-rpc.injective.network/";
 const INJECTIVE_TESTNET_EVM_CHAIN_ID = 1439;
@@ -40,6 +40,25 @@ const GET_TX_RETRY_COUNT = 20;
 const GET_TX_RETRY_DELAY_MS = 2000;
 
 const IDL_DIR = resolve(process.cwd(), "lib", "server", "cctp", "idl");
+
+type AnchorTransactionSigner = {
+  publicKey: PublicKey;
+  signTransaction: <T extends Transaction | VersionedTransaction>(tx: T) => Promise<T>;
+  signAllTransactions: <T extends Transaction | VersionedTransaction>(txs: T[]) => Promise<T[]>;
+};
+
+type RemoteTokenMessengerEntry = {
+  publicKey: PublicKey;
+  account: {
+    domain: number | { toNumber: () => number };
+  };
+};
+
+type RemoteTokenMessengerAccounts = {
+  remoteTokenMessenger: {
+    all: () => Promise<RemoteTokenMessengerEntry[]>;
+  };
+};
 
 function loadIdl(filename: string) {
   return JSON.parse(readFileSync(resolve(IDL_DIR, filename), "utf8"));
@@ -67,8 +86,73 @@ const messageTransmitterV2Abi = [
   },
 ] as const;
 
+export async function relaySolanaCctpMessageToInjective(messageBytes: Hex, attestationBytes: Hex) {
+  const injAccount = privateKeyToAccount(readInjectivePrivateKey());
+  const walletClient = createWalletClient({
+    account: injAccount,
+    chain: injectiveTestnetEvm,
+    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
+  });
+
+  let relayTxHash: Hex;
+
+  try {
+    relayTxHash = await walletClient.writeContract({
+      address: INJECTIVE_MESSAGE_TRANSMITTER_V2,
+      abi: messageTransmitterV2Abi,
+      functionName: "receiveMessage",
+      args: [messageBytes, attestationBytes],
+      account: injAccount,
+      chain: injectiveTestnetEvm,
+    });
+  } catch (error) {
+    throw withRelayStage(error, "receive transaction");
+  }
+
+  return { relayTxHash, relayReceipt: await waitForSolanaCctpInjectiveRelayReceipt(relayTxHash) };
+}
+
+export async function waitForSolanaCctpInjectiveRelayReceipt(relayTxHash: Hex) {
+  const publicClient = createPublicClient({
+    chain: injectiveTestnetEvm,
+    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
+  });
+
+  let relayReceipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
+
+  try {
+    relayReceipt = await publicClient.waitForTransactionReceipt({ hash: relayTxHash });
+  } catch (error) {
+    throw withRelayStage(error, "receive receipt", relayTxHash);
+  }
+
+  if (relayReceipt.status !== "success") {
+    throw withRelayStage(new Error("receiveMessage transaction failed."), "receive receipt", relayTxHash);
+  }
+
+  return relayReceipt;
+}
+
 export type ExecuteSolanaToInjectiveInput = PrepareSolanaToInjectiveCctpTransferInput & {
   confirmation: "EXECUTE_SOLANA_TO_INJECTIVE";
+};
+
+export type PrepareUserAuthorizedSolanaToInjectiveBurnInput = {
+  amountUsdc: string;
+  sourceSolanaAddress: string;
+  injectiveRecipientAddress: string;
+};
+
+export type PreparedUserAuthorizedSolanaToInjectiveBurn = {
+  serializedTransaction: string;
+  sourceSolanaAddress: string;
+  sponsorFeePayer: string;
+  eventRentPayer: string;
+  messageSentEventData: string;
+  userUsdcAta: string;
+  amountUsdc: string;
+  injectiveRecipientAddress: string;
+  requiredUserSignature: string;
 };
 
 function readSolanaPrivateKey(): Keypair {
@@ -105,6 +189,132 @@ function confirmEnv(name: string, expected: string) {
   if (process.env[name] !== expected) {
     throw new Error(`${name} must be "${expected}".`);
   }
+}
+
+function remoteTokenMessengerDomain(entry: RemoteTokenMessengerEntry): number {
+  const { domain } = entry.account;
+
+  return typeof domain === "number" ? domain : domain.toNumber();
+}
+
+export async function prepareUserAuthorizedSolanaToInjectiveBurn(
+  input: PrepareUserAuthorizedSolanaToInjectiveBurnInput,
+): Promise<PreparedUserAuthorizedSolanaToInjectiveBurn> {
+  const sponsorKeypair = readSolanaPrivateKey();
+  const preflight = await prepareSolanaToInjectiveCctpTransfer({
+    amountUsdc: input.amountUsdc,
+    sourceSolanaAddress: input.sourceSolanaAddress,
+    recipientInjectiveAddress: input.injectiveRecipientAddress,
+  });
+
+  const blockingSafetyErrors = preflight.safetyErrors.filter((error) => (
+    error.toLowerCase().includes("usdc")
+  ));
+
+  if (blockingSafetyErrors.length > 0) {
+    throw new SolanaToInjectiveCctpExecutionError(
+      "prepare/preflight",
+      new Error(`Unable to prepare user-authorized burn: ${blockingSafetyErrors.join("; ")}`),
+    );
+  }
+
+  const connection = new Connection(SOLANA_DEVNET_RPC_URL, "confirmed");
+  const tokenMessengerMinterIdl = loadIdl("token_messenger_minter_v2.json");
+  const providerWallet: AnchorTransactionSigner = {
+    publicKey: sponsorKeypair.publicKey,
+    signTransaction: async (tx) => { if (tx instanceof Transaction) tx.partialSign(sponsorKeypair); return tx; },
+    signAllTransactions: async (txs) => { txs.forEach((tx) => { if (tx instanceof Transaction) tx.partialSign(sponsorKeypair); }); return txs; },
+  };
+  const provider = new AnchorProvider(connection, providerWallet, { commitment: "confirmed" });
+  const program = new Program(tokenMessengerMinterIdl, provider);
+  const programId = new PublicKey(TOKEN_MESSENGER_MINTER_V2_PROGRAM_ID);
+  const messageTransmitterProgramId = new PublicKey(MESSAGE_TRANSMITTER_V2_PROGRAM_ID);
+  const usdcMint = new PublicKey(SOLANA_DEVNET_USDC_MINT);
+  const ownerPubkey = new PublicKey(preflight.sourceSolanaAddress);
+  const burnTokenAccount = new PublicKey(preflight.sourceUsdcAta);
+  const mintRecipientPubkey = new PublicKey(Buffer.from(preflight.mintRecipient.replace(/^0x/, ""), "hex"));
+
+  const [senderAuthorityPda] = PublicKey.findProgramAddressSync([Buffer.from("sender_authority")], programId);
+  const [denylistAccountPda] = PublicKey.findProgramAddressSync([Buffer.from("denylist_account"), ownerPubkey.toBuffer()], programId);
+  const [messageTransmitterPda] = PublicKey.findProgramAddressSync([Buffer.from("message_transmitter")], messageTransmitterProgramId);
+  const [tokenMessengerPda] = PublicKey.findProgramAddressSync([Buffer.from("token_messenger")], programId);
+  const [tokenMinterPda] = PublicKey.findProgramAddressSync([Buffer.from("token_minter")], programId);
+  const [localTokenPda] = PublicKey.findProgramAddressSync([Buffer.from("local_token"), usdcMint.toBuffer()], programId);
+  const [eventAuthorityPda] = PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], programId);
+  const allRemoteTokenMessengers = await (program.account as unknown as RemoteTokenMessengerAccounts).remoteTokenMessenger.all();
+  const target = allRemoteTokenMessengers.find((entry) => remoteTokenMessengerDomain(entry) === DESTINATION_DOMAIN);
+
+  if (!target) {
+    throw new SolanaToInjectiveCctpExecutionError(
+      "burn transaction",
+      new Error(`No initialized Circle remoteTokenMessenger found for destination domain ${DESTINATION_DOMAIN}.`),
+    );
+  }
+
+  const messageSentEventDataKeypair = Keypair.generate();
+  const tx = await program.methods
+    .depositForBurn({
+      amount: new BN(preflight.amount.toString()),
+      destinationDomain: DESTINATION_DOMAIN,
+      mintRecipient: mintRecipientPubkey,
+      destinationCaller: PublicKey.default,
+      maxFee: new BN(0),
+      minFinalityThreshold: 2000,
+    })
+    .accounts({
+      owner: ownerPubkey,
+      eventRentPayer: sponsorKeypair.publicKey,
+      senderAuthorityPda,
+      burnTokenAccount,
+      denylistAccount: denylistAccountPda,
+      messageTransmitter: messageTransmitterPda,
+      tokenMessenger: tokenMessengerPda,
+      remoteTokenMessenger: target.publicKey,
+      tokenMinter: tokenMinterPda,
+      localToken: localTokenPda,
+      burnTokenMint: usdcMint,
+      messageSentEventData: messageSentEventDataKeypair.publicKey,
+      messageTransmitterProgram: messageTransmitterProgramId,
+      tokenMessengerMinterProgram: programId,
+      tokenProgram: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+      systemProgram: new PublicKey("11111111111111111111111111111111"),
+      eventAuthority: eventAuthorityPda,
+      program: programId,
+    })
+    .signers([messageSentEventDataKeypair])
+    .transaction();
+
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = sponsorKeypair.publicKey;
+
+  const [sponsorBalance, feeForMessage, eventRentEstimate] = await Promise.all([
+    connection.getBalance(sponsorKeypair.publicKey),
+    connection.getFeeForMessage(tx.compileMessage(), "confirmed"),
+    connection.getMinimumBalanceForRentExemption(SPONSOR_EVENT_RENT_ESTIMATE_BYTES),
+  ]);
+  const requiredLamports = BigInt((feeForMessage.value ?? 0) + eventRentEstimate);
+
+  if (BigInt(sponsorBalance) < requiredLamports) {
+    throw new SolanaToInjectiveCctpExecutionError(
+      "prepare/preflight",
+      new Error("Sponsor wallet does not have enough devnet SOL for transaction fee and event rent."),
+    );
+  }
+
+  tx.partialSign(sponsorKeypair, messageSentEventDataKeypair);
+
+  return {
+    serializedTransaction: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+    sourceSolanaAddress: preflight.sourceSolanaAddress,
+    sponsorFeePayer: sponsorKeypair.publicKey.toBase58(),
+    eventRentPayer: sponsorKeypair.publicKey.toBase58(),
+    messageSentEventData: messageSentEventDataKeypair.publicKey.toBase58(),
+    userUsdcAta: preflight.sourceUsdcAta,
+    amountUsdc: preflight.amountUsdc,
+    injectiveRecipientAddress: preflight.recipientInjectiveAddress,
+    requiredUserSignature: preflight.sourceSolanaAddress,
+  };
 }
 
 export async function executeSolanaToInjectiveCctpTransfer(
@@ -160,12 +370,12 @@ export async function executeSolanaToInjectiveCctpTransfer(
 
   // --- Solana burn ---
   const tokenMessengerMinterIdl = loadIdl("token_messenger_minter_v2.json");
-  const providerWallet = {
+  const providerWallet: AnchorTransactionSigner = {
     publicKey: solanaKeypair.publicKey,
-    signTransaction: async (tx: any) => { tx.partialSign(solanaKeypair); return tx; },
-    signAllTransactions: async (txs: any[]) => { txs.forEach((tx) => tx.partialSign(solanaKeypair)); return txs; },
+    signTransaction: async (tx) => { if (tx instanceof Transaction) tx.partialSign(solanaKeypair); return tx; },
+    signAllTransactions: async (txs) => { txs.forEach((tx) => { if (tx instanceof Transaction) tx.partialSign(solanaKeypair); }); return txs; },
   };
-  const provider = new AnchorProvider(connection, providerWallet as any, { commitment: "confirmed" });
+  const provider = new AnchorProvider(connection, providerWallet, { commitment: "confirmed" });
   const program = new Program(tokenMessengerMinterIdl, provider);
   const programId = new PublicKey(TOKEN_MESSENGER_MINTER_V2_PROGRAM_ID);
   const messageTransmitterProgramId = new PublicKey(MESSAGE_TRANSMITTER_V2_PROGRAM_ID);
@@ -198,9 +408,9 @@ export async function executeSolanaToInjectiveCctpTransfer(
     [Buffer.from("__event_authority")], programId,
   );
 
-  const allRemoteTokenMessengers = await (program.account as Record<string, any>).remoteTokenMessenger.all();
+  const allRemoteTokenMessengers = await (program.account as unknown as RemoteTokenMessengerAccounts).remoteTokenMessenger.all();
   const target = allRemoteTokenMessengers.find(
-    (entry: any) => (entry.account.domain as number) === DESTINATION_DOMAIN,
+    (entry) => remoteTokenMessengerDomain(entry) === DESTINATION_DOMAIN,
   );
 
   if (!target) {
@@ -360,44 +570,14 @@ export async function executeSolanaToInjectiveCctpTransfer(
   }
 
   // --- Injective relay ---
-  const injAccount = privateKeyToAccount(readInjectivePrivateKey());
-  const publicClient = createPublicClient({
-    chain: injectiveTestnetEvm,
-    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
-  });
-  const walletClient = createWalletClient({
-    account: injAccount,
-    chain: injectiveTestnetEvm,
-    transport: http(INJECTIVE_TESTNET_EVM_RPC_URL),
-  });
-
   let relayTxHash: string;
 
   try {
-    relayTxHash = await walletClient.writeContract({
-      address: INJECTIVE_MESSAGE_TRANSMITTER_V2,
-      abi: messageTransmitterV2Abi,
-      functionName: "receiveMessage",
-      args: [messageBytes as Hex, attestationBytes as Hex],
-      account: injAccount,
-      chain: injectiveTestnetEvm,
-    });
+    ({ relayTxHash } = await relaySolanaCctpMessageToInjective(messageBytes as Hex, attestationBytes as Hex));
   } catch (error) {
-    throw new SolanaToInjectiveCctpExecutionError("receive transaction", error, burnTxHash);
-  }
-
-  let relayReceipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
-
-  try {
-    relayReceipt = await publicClient.waitForTransactionReceipt({ hash: relayTxHash as Hex });
-  } catch (error) {
-    throw new SolanaToInjectiveCctpExecutionError("receive receipt", error, burnTxHash);
-  }
-
-  if (relayReceipt.status !== "success") {
     throw new SolanaToInjectiveCctpExecutionError(
-      "receive receipt",
-      new Error("receiveMessage transaction failed."),
+      getRelayStage(error),
+      error,
       burnTxHash,
     );
   }
@@ -435,4 +615,22 @@ function bs58Decode(encoded: string): Uint8Array {
   }
 
   return new Uint8Array(bytes);
+}
+
+function withRelayStage(error: unknown, stage: "receive transaction" | "receive receipt", relayTxHash?: Hex) {
+  if (error instanceof Error) {
+    return Object.assign(error, { relayStage: stage, relayTxHash });
+  }
+
+  return Object.assign(new Error(String(error)), { relayStage: stage, relayTxHash });
+}
+
+function getRelayStage(error: unknown): "receive transaction" | "receive receipt" {
+  if (error && typeof error === "object" && "relayStage" in error) {
+    const stage = (error as { relayStage?: unknown }).relayStage;
+
+    if (stage === "receive receipt") return "receive receipt";
+  }
+
+  return "receive transaction";
 }

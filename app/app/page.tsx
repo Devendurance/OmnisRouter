@@ -3,87 +3,57 @@
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import { isDevelopment } from "../../lib/server/feature-flags";
 import { AppHero, DetailList, Metric } from "./components";
+import { useInjectiveEvmWallet, INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID } from "./InjectiveEvmWalletProvider";
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
-import { useProductState, type WalletState } from "./product-state";
+import { useProductState } from "./product-state";
 import SolanaWalletButton from "./SolanaWalletButton";
-import { useInjectiveNativeBalance, useInjectiveUsdcBalance, type InjectiveUsdcBalanceState } from "./useInjectiveNativeBalance";
 import { useSolanaUsdcBalance, type SolanaUsdcBalanceState } from "./useSolanaUsdcBalance";
 
 export default function DashboardPage() {
-  const { wallets, rules, gasCredits, remainingGasCredits, ruleResult } = useProductState();
+  const { rules, gasCredits, remainingGasCredits, ruleResult } = useProductState();
   const { connection } = useConnection();
-  const { connected, publicKey } = useWallet();
+  const { connected: solanaConnected, publicKey } = useWallet();
   const [solBalanceState, setSolBalanceState] = useState<SolBalanceState>({ status: "idle" });
   const solBalanceRequestRef = useRef(0);
   const injectiveWallet = useInjectiveWallet();
-  const injBalance = useInjectiveNativeBalance(injectiveWallet.isConnected ? injectiveWallet.address : "");
-  const injectiveUsdcBalance = useInjectiveUsdcBalance(injectiveWallet.isConnected ? injectiveWallet.address : "");
+  const injectiveEvmWallet = useInjectiveEvmWallet();
   const solanaUsdcBalance = useSolanaUsdcBalance();
   const solanaAddress = publicKey?.toBase58() ?? "";
 
   async function refreshSolBalance() {
-    if (!connected || !publicKey) {
-      setSolBalanceState({ status: "idle" });
-      return;
-    }
-
+    if (!solanaConnected || !publicKey) { setSolBalanceState({ status: "idle" }); return; }
     const currentPublicKey = publicKey;
     const requestId = ++solBalanceRequestRef.current;
     setSolBalanceState({ status: "loading" });
-
     try {
       const lamports = await connection.getBalance(currentPublicKey);
-
-      if (solBalanceRequestRef.current === requestId) {
-        setSolBalanceState({ status: "success", balanceSol: lamports / LAMPORTS_PER_SOL });
-      }
+      if (solBalanceRequestRef.current === requestId) setSolBalanceState({ status: "success", balanceSol: lamports / LAMPORTS_PER_SOL });
     } catch (error) {
-      if (solBalanceRequestRef.current === requestId) {
-        setSolBalanceState({
-          status: "error",
-          error: error instanceof Error ? error.message : "Unable to read SOL balance.",
-        });
-      }
+      if (solBalanceRequestRef.current === requestId) setSolBalanceState({ status: "error", error: error instanceof Error ? error.message : "Unable to read SOL balance." });
     }
   }
 
   useEffect(() => {
+    if (!solanaConnected || !publicKey) return;
     const requestId = ++solBalanceRequestRef.current;
-
-    if (!connected || !publicKey) {
-      return;
-    }
-
     const currentPublicKey = publicKey;
-
-    async function readSolBalance() {
+    (async () => {
       setSolBalanceState({ status: "loading" });
-
       try {
         const lamports = await connection.getBalance(currentPublicKey);
-
-        if (solBalanceRequestRef.current === requestId) {
-          setSolBalanceState({ status: "success", balanceSol: lamports / LAMPORTS_PER_SOL });
-        }
+        if (solBalanceRequestRef.current === requestId) setSolBalanceState({ status: "success", balanceSol: lamports / LAMPORTS_PER_SOL });
       } catch (error) {
-        if (solBalanceRequestRef.current === requestId) {
-          setSolBalanceState({
-            status: "error",
-            error: error instanceof Error ? error.message : "Unable to read SOL balance.",
-          });
-        }
+        if (solBalanceRequestRef.current === requestId) setSolBalanceState({ status: "error", error: error instanceof Error ? error.message : "Unable to read SOL balance." });
       }
-    }
+    })();
+  }, [solanaConnected, connection, publicKey]);
 
-    void readSolBalance();
-  }, [connected, connection, publicKey]);
-
-  const solBalanceDisplay = formatSolBalance(connected ? solBalanceState : { status: "idle" });
-  const solanaUsdcBalanceDisplay = formatSolanaUsdcBalance(connected ? solanaUsdcBalance.state : { status: "idle" });
-  const injBalanceDisplay = formatInjBalance(injBalance.state);
-  const injectiveUsdcBalanceDisplay = formatInjectiveUsdcBalance(injectiveUsdcBalance.state);
+  const hasAnyWallet = solanaConnected || injectiveEvmWallet.isConnected || injectiveWallet.isConnected;
+  const evmChainOk = injectiveEvmWallet.chainId.toLowerCase() === INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX;
+  const showNativeInjCollapsed = injectiveWallet.isConnected && (solanaConnected || injectiveEvmWallet.isConnected);
 
   return (
     <>
@@ -91,209 +61,171 @@ export default function DashboardPage() {
       <section className="content-grid two-col" aria-labelledby="dashboard-title">
         <div className="card primary-card">
           <p className="eyebrow">Dashboard</p>
-          <h2 id="dashboard-title">Wallet state</h2>
-          <div className="metric-row"><BalanceMetric label="Native SOL gas balance" value={solBalanceDisplay.value} detail={solBalanceDisplay.detail} note={solBalanceDisplay.note} badges={solBalanceDisplay.badges} action={<button aria-label="Refresh native SOL gas balance" className="secondary-button compact" disabled={!connected || solBalanceState.status === "loading"} onClick={() => { void refreshSolBalance(); }} type="button">Refresh</button>} /><BalanceMetric label="Native INJ gas balance" value={injBalanceDisplay.value} detail={injBalanceDisplay.detail} note={injBalanceDisplay.note} badges={injBalanceDisplay.badges} action={<button aria-label="Refresh native INJ gas balance" className="secondary-button compact" disabled={!injectiveWallet.isConnected || injBalance.state.status === "loading"} onClick={() => { void injBalance.refresh(); }} type="button">Refresh</button>} /><BalanceMetric label="Real Solana USDC balance" value={solanaUsdcBalanceDisplay.value} detail={solanaUsdcBalanceDisplay.detail} note={solanaUsdcBalanceDisplay.note} badges={solanaUsdcBalanceDisplay.badges} action={<button aria-label="Refresh real Solana USDC balance" className="secondary-button compact" disabled={!connected || solanaUsdcBalance.state.status === "loading"} onClick={() => { void solanaUsdcBalance.refresh(); }} type="button">Refresh</button>} /><BalanceMetric label="Real Injective USDC balance" value={injectiveUsdcBalanceDisplay.value} detail={injectiveUsdcBalanceDisplay.detail} note={injectiveUsdcBalanceDisplay.note} badges={injectiveUsdcBalanceDisplay.badges} action={<button aria-label="Refresh real Injective USDC balance" className="secondary-button compact" disabled={!injectiveWallet.isConnected || injectiveUsdcBalance.state.status === "loading"} onClick={() => { void injectiveUsdcBalance.refresh(); }} type="button">Refresh</button>} /></div>
-          <p className="status-banner warning">Testnet balances are shown for visibility before execution.</p>
-          <Metric label="Gas credits" value={`${remainingGasCredits}/${gasCredits.dailyLimit}`} detail="Sponsored transfers today" />
-          <DetailList entries={[["Solana wallet", connected ? solanaAddress : "Connect wallet or refresh balance"], ["Injective wallet", injectiveWallet.isConnected ? `${injectiveWallet.wallet ?? "Selected wallet"}: ${injectiveWallet.address}` : "Connect wallet or refresh balance"], ["Coming later", `Base, Arbitrum, and EVM wallet support`], ["Allowed destinations", rules.allowedDestinationChains.join(", ")], ["Approval threshold", `${rules.approvalThreshold} USDC`], ["Router state", rules.emergencyPauseEnabled ? "Emergency paused" : ruleResult.status === "denied" ? "Payment denied" : "Ready"]]} />
-          <div className="button-row"><Link className="primary-button" href="/app/agent">Start payment</Link><Link className="secondary-button" href="/app/rules">Review rules</Link></div>
+          <h2 id="dashboard-title">Connected wallets</h2>
+          <p className="wallet-note">Only connected wallets are shown here.</p>
+
+          {!hasAnyWallet ? (
+            <p className="status-banner warning">Connect a wallet to see balances and available routes.</p>
+          ) : null}
+
+          <div className="dashboard-stack">
+            {solanaConnected ? (
+              <div className="wallet-balance-card">
+                <div className="wallet-card-header">
+                  <strong>Solana wallet</strong>
+                  <div className="wallet-actions">
+                    <span className="wallet-status connected">connected</span>
+                    <SolanaWalletButton />
+                  </div>
+                </div>
+                <div className="wallet-address-row">
+                  <span className="wallet-full-address">{solanaAddress}</span>
+                </div>
+                <DetailList entries={[
+                  ["SOL balance", formatSolBalanceText(solBalanceState)],
+                  ["SOL USDC balance", formatSolanaUsdcBalanceText(solanaUsdcBalance.state)],
+                  ["Network", "Solana devnet"],
+                ]} />
+                <div className="button-row wallet-card-buttons">
+                  <button className="secondary-button compact" disabled={!solanaConnected || solBalanceState.status === "loading"} onClick={refreshSolBalance} type="button">Refresh</button>
+                </div>
+              </div>
+            ) : null}
+
+            {injectiveEvmWallet.isConnected ? (
+              <div className="wallet-balance-card">
+                <div className="wallet-card-header">
+                  <strong>Injective EVM wallet</strong>
+                  <div className="wallet-actions">
+                    <span className={`wallet-status ${evmChainOk ? "connected" : "error"}`}>{evmChainOk ? "Ready" : "Wrong network"}</span>
+                    {injectiveEvmWallet.isConnected ? <button className="secondary-button compact" onClick={injectiveEvmWallet.disconnect} type="button">Disconnect</button> : null}
+                  </div>
+                </div>
+                <div className="wallet-address-row">
+                  <span className="wallet-full-address">{injectiveEvmWallet.address}</span>
+                </div>
+                <DetailList entries={[
+                  ["Active chainId", injectiveEvmWallet.chainIdDecimal ? `${injectiveEvmWallet.chainIdDecimal} / ${injectiveEvmWallet.chainId}` : "Unknown"],
+                  ["Required chainId", `${INJECTIVE_EVM_TESTNET_CHAIN_ID} / ${INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX}`],
+                  ["INJ balance", injectiveEvmWallet.balance.status === "success" ? `${injectiveEvmWallet.balance.inj} INJ` : injectiveEvmWallet.balance.status === "loading" ? "Loading..." : "Unavailable"],
+                  ["USDC balance", injectiveEvmWallet.balance.status === "success" ? `${injectiveEvmWallet.balance.usdc} USDC` : injectiveEvmWallet.balance.status === "loading" ? "Loading..." : "Unavailable"],
+                ]} />
+                <div className="button-row wallet-card-buttons">
+                  {!evmChainOk ? <button className="secondary-button compact" onClick={() => { void injectiveEvmWallet.switchToInjectiveEvmTestnet(); }} type="button">Switch to Injective EVM Testnet</button> : null}
+                  <button className="secondary-button compact" disabled={injectiveEvmWallet.balance.status === "loading"} onClick={() => { void injectiveEvmWallet.refreshBalance(); }} type="button">Refresh</button>
+                </div>
+                {!evmChainOk ? <p className="status-banner error">Wrong network for user-owned gasless CCTP.</p> : null}
+              </div>
+            ) : null}
+
+            {injectiveWallet.isConnected ? (
+              showNativeInjCollapsed ? (
+                <p className="wallet-note">Additional wallet connected: Native Injective — {injectiveWallet.shortAddress}</p>
+              ) : (
+                <div className="wallet-balance-card">
+                  <div className="wallet-card-header">
+                    <strong>Native Injective wallet</strong>
+                    <div className="wallet-actions">
+                      <span className={`wallet-status ${injectiveWallet.connectionStatus}`}>{injectiveWallet.connectionStatus}</span>
+                      {injectiveWallet.isConnected ? <button className="secondary-button compact" onClick={injectiveWallet.disconnect} type="button">Disconnect</button> : null}
+                    </div>
+                  </div>
+                  <div className="wallet-address-row">
+                    <span className="wallet-full-address" title={injectiveWallet.address}>{injectiveWallet.address}</span>
+                  </div>
+                  <DetailList entries={[
+                    ["Wallet type", injectiveWallet.wallet ?? "Selected wallet"],
+                    ["Note", "Native mode is available for Injective identity. User-owned gasless CCTP currently uses Injective EVM wallet mode."],
+                  ]} />
+                </div>
+              )
+            ) : null}
+          </div>
+
+          {isDevelopment ? <Metric label="Gas credits" value={`${remainingGasCredits}/${gasCredits.dailyLimit}`} detail="Sponsored transfers today" /> : null}
+          <DetailList entries={[
+            ["Router state", rules.emergencyPauseEnabled ? "Emergency paused" : ruleResult.status === "denied" ? "Payment denied" : "Ready"],
+          ]} />
+          <div className="button-row">
+            <Link className="primary-button" href="/app/agent">Start payment</Link>
+            <Link className="secondary-button" href="/app/rules">Review rules</Link>
+          </div>
         </div>
+
         <div className="dashboard-stack">
-          <WalletsCard wallets={wallets} />
+          <div className="card">
+            <p className="eyebrow">Wallet actions</p>
+            <div className="wallet-list">
+              {!solanaConnected ? (
+                <div className="wallet-row">
+                  <div><strong>Solana wallet</strong><span>Not connected</span></div>
+                  <div className="wallet-actions"><span className="wallet-status disconnected">disconnected</span><SolanaWalletButton /></div>
+                </div>
+              ) : null}
+              {!injectiveEvmWallet.isConnected ? (
+                <div className="wallet-row">
+                  <div><strong>Injective EVM wallet</strong><span>Not connected</span></div>
+                  <div className="wallet-actions">
+                    <span className="wallet-status disconnected">disconnected</span>
+                    <button className="primary-button compact" disabled={injectiveEvmWallet.connectionStatus === "connecting"} onClick={() => { void injectiveEvmWallet.connect(); }} type="button">Connect</button>
+                  </div>
+                </div>
+              ) : null}
+              {!injectiveWallet.isConnected ? (
+                <div className="wallet-row">
+                  <div><strong>Native Injective wallet</strong><span>Not connected</span></div>
+                  <div className="wallet-actions">
+                    <span className="wallet-status disconnected">disconnected</span>
+                    <ConnectNativeInjectiveButton />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="card">
+            <p className="eyebrow">Receipts</p>
+            <p className="status-banner success">View your private wallet-scoped CCTP receipts.</p>
+            <div className="button-row">
+              <Link className="primary-button" href="/app/receipt">View receipts</Link>
+            </div>
+          </div>
         </div>
       </section>
     </>
   );
 }
 
-function BalanceMetric({
-  label,
-  value,
-  detail,
-  note,
-  badges,
-  action,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  note?: string;
-  badges: string[];
-  action?: ReactNode;
-}) {
-  return (
-    <div className="metric">
-      <div className="metric-heading">
-        <span>{label}</span>
-        {action}
-      </div>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-      {note ? <small>{note}</small> : null}
-      {badges.length > 0 ? <div className="balance-badges">{badges.map((badge) => <span className="balance-badge" key={badge}>{badge}</span>)}</div> : null}
-    </div>
-  );
-}
-
-type SolBalanceState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "success"; balanceSol: number }
-  | { status: "error"; error: string };
-
-function formatSolBalance(state: SolBalanceState): { value: string; detail: string; note?: string; badges: string[] } {
-  if (state.status === "loading") {
-    return { value: "Loading...", detail: "Reading devnet SOL balance", badges: ["Devnet", "Real balance"] };
-  }
-
-  if (state.status === "success") {
-    return {
-      value: `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(state.balanceSol)} SOL`,
-      detail: "Read from Solana devnet",
-      badges: ["Devnet", "Real balance"],
-    };
-  }
-
-  if (state.status === "error") {
-    return { value: "Unavailable", detail: "Could not read devnet SOL balance", note: state.error, badges: ["Devnet", "Error"] };
-  }
-
-  return { value: "Connect wallet or refresh balance", detail: "Connect a Solana wallet to read devnet SOL", badges: ["Devnet"] };
-}
-
-function formatSolanaUsdcBalance(state: SolanaUsdcBalanceState): { value: string; detail: string; note?: string; badges: string[] } {
-  if (state.status === "loading") {
-    return { value: "Loading...", detail: "Reading devnet USDC token account", badges: ["Devnet", "Real balance"] };
-  }
-
-  if (state.status === "success") {
-    return {
-      value: `${state.balanceUsdc} USDC`,
-      detail: "Read from Solana devnet USDC mint",
-      badges: ["Devnet", "Real balance"],
-    };
-  }
-
-  if (state.status === "error") {
-    return { value: "Unavailable", detail: "Could not read devnet USDC balance", note: state.error, badges: ["Devnet", "Error"] };
-  }
-
-  return { value: "Connect wallet or refresh balance", detail: "Connect a Solana wallet to read devnet USDC", badges: ["Devnet"] };
-}
-
-function formatInjectiveUsdcBalance(state: InjectiveUsdcBalanceState): { value: string; detail: string; note?: string; badges: string[] } {
-  if (state.status === "loading") {
-    return { value: "Loading...", detail: "Reading Injective testnet CCTP USDC balance", badges: ["Testnet", "Real balance"] };
-  }
-
-  if (state.status === "success") {
-    return {
-      value: `${state.balanceUsdc} USDC`,
-      detail: "Read from Injective testnet CCTP USDC denom",
-      badges: ["Testnet", "Real balance"],
-    };
-  }
-
-  if (state.status === "error") {
-    return { value: "Unavailable", detail: "Could not read Injective testnet USDC balance", note: state.error, badges: ["Testnet", "Error"] };
-  }
-
-  return { value: "Connect wallet or refresh balance", detail: "Connect an Injective wallet to read testnet USDC", badges: ["Testnet"] };
-}
-
-function formatInjBalance(state: ReturnType<typeof useInjectiveNativeBalance>["state"]): { value: string; detail: string; note?: string; badges: string[] } {
-  if (state.status === "loading") {
-    return { value: "Loading...", detail: "Reading Injective testnet INJ balance", badges: ["Testnet", "Real balance"] };
-  }
-
-  if (state.status === "success") {
-    return {
-      value: state.balanceInj,
-      detail: "Read from Injective testnet",
-      badges: ["Testnet", "Real balance"],
-    };
-  }
-
-  if (state.status === "error") {
-    return { value: "Unavailable", detail: "Could not read testnet INJ balance", note: state.error, badges: ["Testnet", "Error"] };
-  }
-
-  return { value: "Connect wallet or refresh balance", detail: "Connect an Injective wallet to read testnet INJ", badges: ["Testnet"] };
-}
-
-function WalletsCard({
-  wallets,
-}: {
-  wallets: Record<WalletState["chain"], WalletState>;
-}) {
-  const { connected, connecting, publicKey } = useWallet();
+function ConnectNativeInjectiveButton() {
   const injectiveWallet = useInjectiveWallet();
-  const [isInjectivePickerOpen, setIsInjectivePickerOpen] = useState(false);
-  const solanaAddress = publicKey?.toBase58() ?? "";
-  const solanaStatus = connecting ? "connecting" : connected ? "connected" : "disconnected";
+  const [isOpen, setIsOpen] = useState(false);
   const injectiveWallets = ["Keplr", "Leap", "Ninji"] as const;
-  const evmWallet = wallets.EVM;
 
   return (
-    <div className="card">
-      <p className="eyebrow">Wallets</p>
-      <div className="wallet-list">
-        <div className="wallet-row">
-          <div>
-            <strong>Solana wallet</strong>
-            <span>{connected ? shortenWalletAddress(solanaAddress) : "Not connected"}</span>
-            {connected ? <span className="wallet-full-address">{solanaAddress}</span> : null}
-          </div>
-          <div className="wallet-actions">
-            <span className={`wallet-status ${solanaStatus}`}>{solanaStatus}</span>
-            <SolanaWalletButton />
-          </div>
+    <div className="wallet-picker">
+      <button aria-expanded={isOpen} className="primary-button compact" disabled={injectiveWallet.connectionStatus === "connecting"} onClick={() => setIsOpen((o) => !o)} type="button">Connect</button>
+      {isOpen ? (
+        <div className="wallet-menu">
+          {injectiveWallets.map((w) => (
+            <button key={w} onClick={() => { setIsOpen(false); void injectiveWallet.connect(w); }} type="button">{w}</button>
+          ))}
         </div>
-        <div className="wallet-row">
-          <div>
-            <strong>Injective wallet</strong>
-            <span>{injectiveWallet.isConnected ? `${injectiveWallet.wallet} - ${injectiveWallet.shortAddress}` : "Not connected"}</span>
-            {injectiveWallet.isConnected ? <span className="wallet-full-address" title={injectiveWallet.address}>{injectiveWallet.address}</span> : null}
-            {injectiveWallet.error ? <span aria-live="polite" className="wallet-error">{injectiveWallet.error}</span> : null}
-          </div>
-          <div className="wallet-actions">
-            <span aria-live="polite" className={`wallet-status ${injectiveWallet.connectionStatus}`}>{injectiveWallet.connectionStatus}</span>
-            {injectiveWallet.isConnected ? (
-              <button className="secondary-button compact" onClick={injectiveWallet.disconnect} type="button">Disconnect</button>
-            ) : (
-              <div className="wallet-picker">
-                <button aria-expanded={isInjectivePickerOpen} className="primary-button compact" disabled={injectiveWallet.connectionStatus === "connecting"} onClick={() => setIsInjectivePickerOpen((isOpen) => !isOpen)} type="button">Connect Injective Wallet</button>
-                {isInjectivePickerOpen ? (
-                  <div className="wallet-menu">
-                    {injectiveWallets.map((walletName) => (
-                      <button key={walletName} onClick={() => { setIsInjectivePickerOpen(false); void injectiveWallet.connect(walletName); }} type="button">{walletName}</button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="wallet-row">
-          <div>
-            <strong>EVM wallet</strong>
-            <span>Coming later</span>
-          </div>
-          <div className="wallet-actions">
-            <span className={`wallet-status ${evmWallet.connectionStatus}`}>coming later</span>
-            <button className="secondary-button compact" disabled type="button">Connect</button>
-          </div>
-        </div>
-        <p className="wallet-note">Wallet connection and displayed balances use testnet data.</p>
-      </div>
+      ) : null}
     </div>
   );
 }
 
-function shortenWalletAddress(address: string): string {
-  if (!address) {
-    return "Not connected";
-  }
+type SolBalanceState = { status: "idle" } | { status: "loading" } | { status: "success"; balanceSol: number } | { status: "error"; error: string };
 
-  return `${address.slice(0, 6)}...${address.slice(-6)}`;
+function formatSolBalanceText(state: SolBalanceState): string {
+  if (state.status === "loading") return "Loading...";
+  if (state.status === "success") return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(state.balanceSol)} SOL`;
+  if (state.status === "error") return "Unavailable";
+  return "Unavailable";
+}
+
+function formatSolanaUsdcBalanceText(state: SolanaUsdcBalanceState): string {
+  if (state.status === "loading") return "Loading...";
+  if (state.status === "success") return `${state.balanceUsdc} USDC`;
+  if (state.status === "error") return "Unavailable";
+  return "Unavailable";
 }

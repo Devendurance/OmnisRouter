@@ -13,6 +13,7 @@ import {
   rollbackSponsoredGasCredit,
 } from "../../../../../lib/server/gas-credit-limiter";
 import { persistOmnisReceiptBestEffort, withoutUndefined } from "../../../../../lib/server/omnis-receipts";
+import { serverFundedExecutionEnabled } from "../../../../../lib/server/feature-flags";
 
 const USDC_DECIMALS = 6;
 const EXECUTION_CONFIRMATION = "EXECUTE_TESTNET_CCTP";
@@ -33,6 +34,10 @@ export async function POST(request: Request) {
   let reservedLimiterKey: string | null = null;
 
   try {
+    if (!serverFundedExecutionEnabled) {
+      return NextResponse.json({ ok: false, error: "Server-funded execution is disabled." }, { status: 403 });
+    }
+
     if (process.env.ENABLE_CCTP_EXECUTION_API !== "true") {
       return NextResponse.json({ ok: false, error: "CCTP execution API is disabled." }, { status: 403 });
     }
