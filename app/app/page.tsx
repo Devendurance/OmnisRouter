@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { isDevelopment } from "../../lib/server/feature-flags";
 import { AppHero, DetailList, Metric } from "./components";
 import { useInjectiveEvmWallet, INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID } from "./InjectiveEvmWalletProvider";
+import type { EvmProviderInfo } from "./InjectiveEvmWalletProvider";
 import { useInjectiveWallet } from "./InjectiveWalletProvider";
 import { useProductState } from "./product-state";
 import SolanaWalletButton from "./SolanaWalletButton";
@@ -96,6 +97,7 @@ export default function DashboardPage() {
               <div className="wallet-balance-card">
                 <div className="wallet-card-header">
                   <strong>Injective EVM wallet</strong>
+                  {injectiveEvmWallet.providerName ? <span className="wallet-detail">{injectiveEvmWallet.providerName}</span> : null}
                   <div className="wallet-actions">
                     <span className={`wallet-status ${evmChainOk ? "connected" : "error"}`}>{evmChainOk ? "Ready" : "Wrong network"}</span>
                     {injectiveEvmWallet.isConnected ? <button className="secondary-button compact" onClick={injectiveEvmWallet.disconnect} type="button">Disconnect</button> : null}
@@ -171,6 +173,13 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ) : null}
+              {injectiveEvmWallet.selectingProvider ? (
+                <EVMProviderPicker
+                  providers={injectiveEvmWallet.detectedProviders}
+                  onSelect={(info) => { void injectiveEvmWallet.selectProvider(info); }}
+                  onCancel={injectiveEvmWallet.cancelProviderSelection}
+                />
+              ) : null}
               {!injectiveWallet.isConnected ? (
                 <div className="wallet-row">
                   <div><strong>Native Injective wallet</strong><span>Not connected</span></div>
@@ -228,4 +237,33 @@ function formatSolanaUsdcBalanceText(state: SolanaUsdcBalanceState): string {
   if (state.status === "success") return `${state.balanceUsdc} USDC`;
   if (state.status === "error") return "Unavailable";
   return "Unavailable";
+}
+
+function EVMProviderPicker({ providers, onSelect, onCancel }: { providers: EvmProviderInfo[]; onSelect: (info: EvmProviderInfo) => void; onCancel: () => void }) {
+  return (
+    <div className="card">
+      <p className="eyebrow">Choose Injective EVM wallet</p>
+      <p className="status-banner warning">Choose a wallet that supports Injective EVM testnet. MetaMask, Rabby, OKX, and Brave are recommended.</p>
+      {providers.length === 0 ? (
+        <p className="status-banner error">No supported Injective EVM wallet detected. Install or enable MetaMask, Rabby, OKX, or Brave.</p>
+      ) : (
+        <div className="wallet-list">
+          {providers.map((info) => (
+            <div className="wallet-row" key={info.rdns}>
+              <div>
+                <strong>{info.name}</strong>
+                <span>{info.rdns}</span>
+              </div>
+              <div className="wallet-actions">
+                <button className="primary-button compact" onClick={() => onSelect(info)} type="button">Connect</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="button-row">
+        <button className="secondary-button compact" onClick={onCancel} type="button">Cancel</button>
+      </div>
+    </div>
+  );
 }
