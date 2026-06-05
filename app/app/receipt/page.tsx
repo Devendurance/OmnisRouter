@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAccount, useSignMessage } from "wagmi";
 import { AppHero, DetailList } from "../components";
 import { injectiveTestnetTxUrl, shortenHash } from "../../../lib/explorers";
 import type { ReactNode } from "react";
@@ -43,7 +44,6 @@ type WalletSession = {
 declare global {
   interface Window {
     solana?: { publicKey?: { toBase58: () => string }; signMessage?: (message: Uint8Array, encoding: string) => Promise<{ signature: Uint8Array }> };
-    ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown>; selectedAddress?: string };
   }
 }
 
@@ -169,6 +169,8 @@ export default function ReceiptPage() {
   const [receiptsLoading, setReceiptsLoading] = useState(false);
   const [signInState, setSignInState] = useState<{ status: "idle" | "loading" | "error"; error?: string }>({ status: "idle" });
   const didFetchRef = useRef(false);
+  const { address: wagmiAddress } = useAccount();
+  const { signMessageAsync } = useSignMessage();
 
   const fetchSession = useCallback(async () => {
     setSessionLoading(true);
@@ -239,13 +241,8 @@ export default function ReceiptPage() {
         walletAddress = window.solana?.publicKey?.toBase58() || "";
         if (!walletAddress) throw new Error("Solana wallet not connected.");
       } else {
-        walletAddress = (window as Window & { ethereum?: { selectedAddress?: string } }).ethereum?.selectedAddress || "";
-        if (!walletAddress) {
-          const accounts = await window.ethereum!.request({ method: "eth_requestAccounts" });
-          walletAddress = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
-        }
-
-        if (!walletAddress) throw new Error("EVM wallet not connected.");
+        walletAddress = wagmiAddress || "";
+        if (!walletAddress) throw new Error("Connect an Injective EVM wallet from the Dashboard first.");
       }
 
       const challengeRes = await fetch("/api/auth/wallet/challenge", {
@@ -268,12 +265,7 @@ export default function ReceiptPage() {
         signature = Buffer.from(result.signature).toString("hex");
         if (!signature.startsWith("0x")) signature = `0x${signature}`;
       } else {
-        const ethereum = window.ethereum;
-        if (!ethereum) throw new Error("No EVM wallet provider found.");
-        signature = await ethereum.request({
-          method: "personal_sign",
-          params: [challengeData.message, walletAddress],
-        }) as string;
+        signature = await signMessageAsync({ message: challengeData.message });
       }
 
       const verifyRes = await fetch("/api/auth/wallet/verify", {

@@ -1691,3 +1691,236 @@ textarea:focus {
     left: 0;
   }
 }
+
+/* ---- Mobile nav drawer ---- */
+.hamburger {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  z-index: 1100;
+}
+
+.hamburger-line {
+  width: 20px;
+  height: 2px;
+  background: var(--text-primary);
+  border-radius: 1px;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.hamburger-line.open:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.hamburger-line.open:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-line.open:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.mobile-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mobile-drawer {
+  width: 100%;
+  max-width: 400px;
+  height: 100%;
+  background: var(--bg-elevated);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.mobile-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.mobile-drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.mobile-drawer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.mobile-nav-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 1rem;
+  padding: 12px 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.mobile-nav-link:hover,
+.mobile-nav-link.active {
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.mobile-drawer-footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ---- EVM connect area ---- */
+.evm-connect-area {
+  display: flex;
+  align-items: center;
+}
+
+.evm-account-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chain-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-success);
+  display: inline-block;
+}
+
+.nav-button.primary {
+  background: var(--accent);
+  color: white;
+  border-radius: 8px;
+  padding: 6px 14px;
+}
+
+.nav-button.primary:hover {
+  background: var(--accent-hover);
+}
+
+.nav-button.danger {
+  background: var(--status-error);
+  color: white;
+  border-radius: 8px;
+  padding: 6px 14px;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Desktop nav visibility ---- */
+.desktop-nav {
+  display: flex;
+  gap: 0;
+}
+
+@media (max-width: 768px) {
+  .desktop-nav {
+    display: none;
+  }
+
+  .pause-pill {
+    display: none;
+  }
+}
+
+@media (min-width: 769px) {
+  .hamburger {
+    display: none;
+  }
+}
+
+/* ---- Wallet balance card layout ---- */
+.wallet-balance-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--bg-card);
+}
+
+.wallet-card-header-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.wallet-card-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.wallet-card-title-row strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.wallet-provider-label {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.wallet-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.wallet-address-row {
+  margin-bottom: 8px;
+}
+
+.wallet-full-address {
+  color: var(--text-code);
+  font-family: monospace;
+  font-size: 0.8rem;
+  display: block;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 6px 10px;
+  max-width: 100%;
+}
+
+.wallet-note {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin-top: 8px;
+}

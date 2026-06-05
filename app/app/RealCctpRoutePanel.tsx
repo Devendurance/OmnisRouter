@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { DetailList } from "./components";
 import { INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID, useInjectiveEvmWallet, type InjectiveEvmWalletState } from "./InjectiveEvmWalletProvider";
-import { useInjectiveWallet } from "./InjectiveWalletProvider";
 import { useProductState } from "./product-state";
 import { injectiveTestnetTxUrl, shortenHash } from "../../lib/explorers";
 import { showDebugPanels, showServerFundedRoutes } from "../../lib/server/feature-flags";
@@ -189,8 +188,6 @@ type CompletedInjectiveForwardingResponse = {
 
 type ForwardingStage = "idle" | "burning-injective" | "burn-submitted";
 
-type InjectiveSourceWalletMode = "native-injective" | "injective-evm" | null;
-
 type InjectiveAuthorizationDebug = {
   prepareAuthorizationPayload: Record<string, string> | null;
   prepareAuthorizationResponse: PreparedInjectiveAuthorizationResponse | null;
@@ -210,7 +207,6 @@ type AuthorizationInputs = TransferInputs & {
 export function RealCctpRoutePanel() {
   const { publicKey: solanaPublicKey, signTransaction } = useWallet();
   const injectiveEvmWallet = useInjectiveEvmWallet();
-  const injectiveWallet = useInjectiveWallet();
   const { gasCredits, intent, recordCctpReceipt, recordRealSponsoredExecution, remainingGasCredits, route, rules } = useProductState();
   const amountUsdc = Number.isFinite(intent.amount) ? String(intent.amount) : "";
   const solanaRecipientAddress = route.recipientValidation.normalizedAddress || intent.recipientAddress.trim();
@@ -248,7 +244,7 @@ export function RealCctpRoutePanel() {
   const [submitBurnState, setSubmitBurnState] = useState<ApiState<SubmitSignedBurnResponse>>({ status: "idle" });
   const [completeRelayState, setCompleteRelayState] = useState<ApiState<CompleteInjectiveRelayResponse>>({ status: "idle" });
   const [relayStage, setRelayStage] = useState<RelayStage>("idle");
-  const [sourceWalletMode, setSourceWalletMode] = useState<InjectiveSourceWalletMode>(null);
+  const [sourceWalletMode, setSourceWalletMode] = useState<"injective-evm" | null>(null);
   const [preparedAuthorizationInputs, setPreparedAuthorizationInputs] = useState<AuthorizationInputs | null>(null);
   const [preparedAuthorizationState, setPreparedAuthorizationState] = useState<ApiState<PreparedInjectiveAuthorizationResponse>>({ status: "idle" });
   const [authorizationSignatureState, setAuthorizationSignatureState] = useState<ApiState<SignedInjectiveAuthorization>>({ status: "idle" });
@@ -329,6 +325,13 @@ export function RealCctpRoutePanel() {
 
     return () => window.clearTimeout(timeoutId);
   }, [amountUsdc, sourceEvmAddress, injectiveEvmWallet.chainId]);
+
+  useEffect(() => {
+    if (eligible && injectiveEvmWallet.isConnected && evmChainOk && sourceWalletMode === null) {
+      const id = window.setTimeout(() => setSourceWalletMode("injective-evm"), 0);
+      return () => window.clearTimeout(id);
+    }
+  }, [eligible, injectiveEvmWallet.isConnected, evmChainOk, sourceWalletMode]);
 
   async function prepareUserAuthorizedBurn() {
     if (!canPrepareUserAuthorizedBurn) return;
@@ -724,17 +727,6 @@ export function RealCctpRoutePanel() {
     }
   }
 
-  function selectInjectiveSourceWalletMode(mode: InjectiveSourceWalletMode) {
-    setSourceWalletMode(mode);
-    setPreparedAuthorizationState({ status: "idle" });
-    setAuthorizationSignatureState({ status: "idle" });
-    setVerifiedAuthorizationState({ status: "idle" });
-    setSubmittedAuthorizationState({ status: "idle" });
-    setForwardingState({ status: "idle" });
-    setForwardingStage("idle");
-    setPreparedAuthorizationInputs(null);
-  }
-
   async function runPreflight() {
     if (!eligible) {
       return;
@@ -881,12 +873,10 @@ export function RealCctpRoutePanel() {
             onSubmit={submitInjectiveAuthorization}
             onCompleteForwarding={completeForwarding}
             preparedAuthorizationState={preparedAuthorizationState}
-            connectedInjectiveNativeAddress={injectiveWallet.address}
             debug={injectiveAuthorizationDebug}
             evmChainOk={evmChainOk}
             evmWallet={injectiveEvmWallet}
             sourceWalletMode={sourceWalletMode}
-            onSelectSourceWalletMode={selectInjectiveSourceWalletMode}
             verifiedAuthorizationState={verifiedAuthorizationState}
             submittedAuthorizationState={submittedAuthorizationState}
             forwardingState={forwardingState}
@@ -1069,7 +1059,6 @@ function InjectiveAuthorizationPanel({
   canSign,
   canSubmit,
   canVerify,
-  connectedInjectiveNativeAddress,
   debug,
   evmChainOk,
   evmWallet,
@@ -1077,7 +1066,6 @@ function InjectiveAuthorizationPanel({
   forwardingStage,
   onCompleteForwarding,
   onPrepare,
-  onSelectSourceWalletMode,
   onSign,
   onSubmit,
   onVerify,
@@ -1093,7 +1081,6 @@ function InjectiveAuthorizationPanel({
   canSign: boolean;
   canSubmit: boolean;
   canVerify: boolean;
-  connectedInjectiveNativeAddress: string;
   debug: InjectiveAuthorizationDebug;
   evmChainOk: boolean;
   evmWallet: InjectiveEvmWalletState;
@@ -1101,12 +1088,11 @@ function InjectiveAuthorizationPanel({
   forwardingStage: ForwardingStage;
   onCompleteForwarding: () => void;
   onPrepare: () => void;
-  onSelectSourceWalletMode: (mode: InjectiveSourceWalletMode) => void;
   onSign: () => void;
   onSubmit: () => void;
   onVerify: () => void;
   preparedAuthorizationState: ApiState<PreparedInjectiveAuthorizationResponse>;
-  sourceWalletMode: InjectiveSourceWalletMode;
+  sourceWalletMode: "injective-evm" | null;
   submittedAuthorizationState: ApiState<SubmittedInjectiveAuthorizationResponse>;
   verifiedAuthorizationState: ApiState<VerifiedInjectiveAuthorizationResponse>;
 }) {
@@ -1123,26 +1109,6 @@ function InjectiveAuthorizationPanel({
     <div className="cctp-result-panel">
       <p className="eyebrow">User-owned gasless route</p>
       <p className="status-banner success">Your Injective EVM wallet authorizes USDC with a signature. OmnisRouter pays gas and routes through CCTP.</p>
-      <div className="option-grid" aria-label="Injective source wallet mode">
-        <button className={`option-card ${sourceWalletMode === "native-injective" ? "selected" : ""}`} onClick={() => onSelectSourceWalletMode("native-injective")} type="button">
-          <strong>Use native Injective wallet</strong>
-          <span>Keplr / Leap / Ninji. Provides an inj... address.</span>
-        </button>
-        <button className={`option-card ${sourceWalletMode === "injective-evm" ? "selected" : ""}`} onClick={() => onSelectSourceWalletMode("injective-evm")} type="button">
-          <strong>Use Injective EVM wallet</strong>
-          <span>MetaMask / Rabby / OKX / Brave. Provides a 0x address for Injective EVM USDC authorization.</span>
-        </button>
-      </div>
-      {sourceWalletMode === "native-injective" ? (
-        <>
-          <DetailList entries={[
-            ["Source wallet mode", "Native Injective"],
-            ["Connected inj... address", connectedInjectiveNativeAddress || "Not connected"],
-          ]} />
-          <p className="status-banner warning">Gasless EIP-3009 authorization currently requires an Injective EVM wallet because USDC and TokenMessengerV2 are EVM contracts.</p>
-          <p className="status-banner warning">This route&apos;s gasless authorization is not available for native-only wallets yet.</p>
-        </>
-      ) : null}
       {sourceWalletMode === "injective-evm" ? (
         <>
           <p className="status-banner success">This route uses your connected Injective EVM wallet as the USDC source. You sign an authorization. OmnisRouter pays gas during execution.</p>
