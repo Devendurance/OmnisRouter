@@ -3,7 +3,7 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import Link from "next/link";
 import { AppHero, DetailList } from "../components";
-import { useInjectiveWallet } from "../InjectiveWalletProvider";
+import { useInjectiveEvmWallet } from "../InjectiveEvmWalletProvider";
 import { useProductState } from "../product-state";
 import { RealCctpRoutePanel } from "../RealCctpRoutePanel";
 import { shortenAddress } from "../../router-simulator";
@@ -11,11 +11,11 @@ import { shortenAddress } from "../../router-simulator";
 export default function ApprovalPage() {
   const { intent, route, ruleResult, gas, rules, feeChoice, setFeeChoice } = useProductState();
   const { connected, publicKey } = useWallet();
-  const injectiveWallet = useInjectiveWallet();
+  const injectiveEvmWallet = useInjectiveEvmWallet();
   const paused = rules.emergencyPauseEnabled;
   const solanaAddress = publicKey?.toBase58() ?? "";
   const sourceWallet = getSourceWalletRequirement(route.sourceChain, {
-    Injective: { address: injectiveWallet.address, connected: injectiveWallet.isConnected },
+    Injective: { address: injectiveEvmWallet.address, connected: injectiveEvmWallet.isConnected },
     Solana: { address: solanaAddress, connected: connected && Boolean(publicKey) },
   });
   const approvalChecksPass = route.supported && ruleResult.status !== "denied" && !paused;

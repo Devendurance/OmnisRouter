@@ -3,15 +3,25 @@
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isDevelopment } from "../../lib/server/feature-flags";
 import { AppHero, DetailList, Metric } from "./components";
 import { useInjectiveEvmWallet, INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX, INJECTIVE_EVM_TESTNET_CHAIN_ID } from "./InjectiveEvmWalletProvider";
 import type { EvmProviderInfo } from "./InjectiveEvmWalletProvider";
-import { useInjectiveWallet } from "./InjectiveWalletProvider";
 import { useProductState } from "./product-state";
 import SolanaWalletButton from "./SolanaWalletButton";
 import { useSolanaUsdcBalance, type SolanaUsdcBalanceState } from "./useSolanaUsdcBalance";
+
+function deriveInjectiveAddress(evmAddress: string): string {
+  if (!evmAddress || !evmAddress.startsWith("0x")) return "";
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getInjectiveAddress } = require("@injectivelabs/sdk-ts");
+    return getInjectiveAddress(evmAddress);
+  } catch {
+    return "";
+  }
+}
 
 export default function DashboardPage() {
   const { rules, gasCredits, remainingGasCredits, ruleResult } = useProductState();
@@ -19,10 +29,14 @@ export default function DashboardPage() {
   const { connected: solanaConnected, publicKey } = useWallet();
   const [solBalanceState, setSolBalanceState] = useState<SolBalanceState>({ status: "idle" });
   const solBalanceRequestRef = useRef(0);
-  const injectiveWallet = useInjectiveWallet();
   const injectiveEvmWallet = useInjectiveEvmWallet();
   const solanaUsdcBalance = useSolanaUsdcBalance();
   const solanaAddress = publicKey?.toBase58() ?? "";
+
+  const injectiveAddress = useMemo(
+    () => deriveInjectiveAddress(injectiveEvmWallet.address),
+    [injectiveEvmWallet.address],
+  );
 
   async function refreshSolBalance() {
     if (!solanaConnected || !publicKey) { setSolBalanceState({ status: "idle" }); return; }
@@ -52,9 +66,29 @@ export default function DashboardPage() {
     })();
   }, [solanaConnected, connection, publicKey]);
 
-  const hasAnyWallet = solanaConnected || injectiveEvmWallet.isConnected || injectiveWallet.isConnected;
+  const hasAnyWallet = solanaConnected || injectiveEvmWallet.isConnected;
   const evmChainOk = injectiveEvmWallet.chainId.toLowerCase() === INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX;
-  const showNativeInjCollapsed = injectiveWallet.isConnected && (solanaConnected || injectiveEvmWallet.isConnected);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <>
+        <AppHero eyebrow="AI stablecoin router" title={<>Plain-English USDC payments with <em>visible control.</em></>} copy="Connect wallets, review route readiness, and monitor testnet gas and USDC balances before execution." />
+        <section className="content-grid two-col" aria-labelledby="dashboard-title">
+          <div className="card primary-card">
+            <p className="eyebrow">Dashboard</p>
+            <h2 id="dashboard-title">Connected wallets</h2>
+            <p className="wallet-note">Loading wallet state...</p>
+          </div>
+        </section>
+      </>
+    );
+  }
 
   return (
     <>
@@ -95,17 +129,27 @@ export default function DashboardPage() {
 
             {injectiveEvmWallet.isConnected ? (
               <div className="wallet-balance-card">
-                <div className="wallet-card-header">
-                  <strong>Injective EVM wallet</strong>
-                  {injectiveEvmWallet.providerName ? <span className="wallet-detail">{injectiveEvmWallet.providerName}</span> : null}
-                  <div className="wallet-actions">
-                    <span className={`wallet-status ${evmChainOk ? "connected" : "error"}`}>{evmChainOk ? "Ready" : "Wrong network"}</span>
-                    {injectiveEvmWallet.isConnected ? <button className="secondary-button compact" onClick={injectiveEvmWallet.disconnect} type="button">Disconnect</button> : null}
+                <div className="wallet-card-header-stacked">
+                  <div className="wallet-card-title-row">
+                    <strong>Injective EVM wallet</strong>
+                    <div className="wallet-actions">
+                      <span className={`wallet-status ${evmChainOk ? "connected" : "error"}`}>{evmChainOk ? "Ready" : "Wrong network"}</span>
+                      <button className="secondary-button compact" onClick={injectiveEvmWallet.disconnect} type="button">Disconnect</button>
+                    </div>
                   </div>
+                  {injectiveEvmWallet.providerName ? <span className="wallet-provider-label">Connected via {injectiveEvmWallet.providerName}</span> : null}
                 </div>
                 <div className="wallet-address-row">
+                  <span className="wallet-label">EVM address</span>
                   <span className="wallet-full-address">{injectiveEvmWallet.address}</span>
                 </div>
+                {injectiveAddress ? (
+                  <div className="wallet-address-row">
+                    <span className="wallet-label">Injective address</span>
+                    <span className="wallet-full-address">{injectiveAddress}</span>
+                  </div>
+                ) : null}
+                <p className="wallet-note">The inj... address is the same Injective account shown in native format. This route uses the EVM address for USDC authorization.</p>
                 <DetailList entries={[
                   ["Active chainId", injectiveEvmWallet.chainIdDecimal ? `${injectiveEvmWallet.chainIdDecimal} / ${injectiveEvmWallet.chainId}` : "Unknown"],
                   ["Required chainId", `${INJECTIVE_EVM_TESTNET_CHAIN_ID} / ${INJECTIVE_EVM_TESTNET_CHAIN_ID_HEX}`],
@@ -117,30 +161,10 @@ export default function DashboardPage() {
                   <button className="secondary-button compact" disabled={injectiveEvmWallet.balance.status === "loading"} onClick={() => { void injectiveEvmWallet.refreshBalance(); }} type="button">Refresh</button>
                 </div>
                 {!evmChainOk ? <p className="status-banner error">Wrong network for user-owned gasless CCTP.</p> : null}
+                {evmChainOk && injectiveEvmWallet.balance.status === "success" && injectiveEvmWallet.balance.usdc === "0" ? (
+                  <p className="status-banner warning">Your Injective EVM USDC balance is empty. Fund it from the Circle faucet, then refresh balances.</p>
+                ) : null}
               </div>
-            ) : null}
-
-            {injectiveWallet.isConnected ? (
-              showNativeInjCollapsed ? (
-                <p className="wallet-note">Additional wallet connected: Native Injective — {injectiveWallet.shortAddress}</p>
-              ) : (
-                <div className="wallet-balance-card">
-                  <div className="wallet-card-header">
-                    <strong>Native Injective wallet</strong>
-                    <div className="wallet-actions">
-                      <span className={`wallet-status ${injectiveWallet.connectionStatus}`}>{injectiveWallet.connectionStatus}</span>
-                      {injectiveWallet.isConnected ? <button className="secondary-button compact" onClick={injectiveWallet.disconnect} type="button">Disconnect</button> : null}
-                    </div>
-                  </div>
-                  <div className="wallet-address-row">
-                    <span className="wallet-full-address" title={injectiveWallet.address}>{injectiveWallet.address}</span>
-                  </div>
-                  <DetailList entries={[
-                    ["Wallet type", injectiveWallet.wallet ?? "Selected wallet"],
-                    ["Note", "Native mode is available for Injective identity. User-owned gasless CCTP currently uses Injective EVM wallet mode."],
-                  ]} />
-                </div>
-              )
             ) : null}
           </div>
 
@@ -169,7 +193,7 @@ export default function DashboardPage() {
                   <div><strong>Injective EVM wallet</strong><span>Not connected</span></div>
                   <div className="wallet-actions">
                     <span className="wallet-status disconnected">disconnected</span>
-                    <button className="primary-button compact" disabled={injectiveEvmWallet.connectionStatus === "connecting"} onClick={() => { void injectiveEvmWallet.connect(); }} type="button">Connect</button>
+                    <span className="wallet-note">Use the EVM connect button in the header.</span>
                   </div>
                 </div>
               ) : null}
@@ -180,15 +204,13 @@ export default function DashboardPage() {
                   onCancel={injectiveEvmWallet.cancelProviderSelection}
                 />
               ) : null}
-              {!injectiveWallet.isConnected ? (
-                <div className="wallet-row">
-                  <div><strong>Native Injective wallet</strong><span>Not connected</span></div>
-                  <div className="wallet-actions">
-                    <span className="wallet-status disconnected">disconnected</span>
-                    <ConnectNativeInjectiveButton />
-                  </div>
-                </div>
-              ) : null}
+            </div>
+          </div>
+          <div className="card">
+            <p className="eyebrow">Need test USDC?</p>
+            <p className="status-banner warning">Use Circle&apos;s faucet to fund your testnet wallet before routing USDC.</p>
+            <div className="button-row">
+              <a className="primary-button" href="https://faucet.circle.com/" target="_blank" rel="noopener noreferrer">Open USDC faucet</a>
             </div>
           </div>
           <div className="card">
@@ -201,25 +223,6 @@ export default function DashboardPage() {
         </div>
       </section>
     </>
-  );
-}
-
-function ConnectNativeInjectiveButton() {
-  const injectiveWallet = useInjectiveWallet();
-  const [isOpen, setIsOpen] = useState(false);
-  const injectiveWallets = ["Keplr", "Leap", "Ninji"] as const;
-
-  return (
-    <div className="wallet-picker">
-      <button aria-expanded={isOpen} className="primary-button compact" disabled={injectiveWallet.connectionStatus === "connecting"} onClick={() => setIsOpen((o) => !o)} type="button">Connect</button>
-      {isOpen ? (
-        <div className="wallet-menu">
-          {injectiveWallets.map((w) => (
-            <button key={w} onClick={() => { setIsOpen(false); void injectiveWallet.connect(w); }} type="button">{w}</button>
-          ))}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
