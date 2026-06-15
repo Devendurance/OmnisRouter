@@ -165,7 +165,7 @@ Users can type a simple command instead of manually selecting bridge options.
 Example:
 
 ```txt
-send 0.1 USDC from Solana to inj1...
+send 0.1 USDC to inj1...
 ```
 
 OmnisRouter extracts:
