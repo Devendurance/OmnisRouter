@@ -97,6 +97,16 @@ export default function CctpLabPage() {
 
       setPreflightInputs(requestInputs);
       setPreflightState({ status: "success", data: payload.preflight });
+      if (typeof pendo !== "undefined") {
+        pendo.track("cctp_lab_route_check_completed", {
+          amountUsdc,
+          solanaRecipientAddress,
+          sourceChain: "Injective",
+          destinationChain: "Solana",
+          approvalNeeded: String(payload.preflight?.approvalNeeded ?? ""),
+          isManualFeeFallback: Boolean(payload.preflight?.isManualFeeFallback),
+        });
+      }
     } catch (error) {
       setPreflightState({ status: "error", error: humanizeError(error, "Unable to complete route check.") });
     }
@@ -127,6 +137,19 @@ export default function CctpLabPage() {
 
       setExecutionState({ status: "success", data: payload });
       recordRealSponsoredExecution();
+      if (typeof pendo !== "undefined") {
+        pendo.track("cctp_lab_transfer_executed", {
+          burnTxHash: payload.burnTxHash ?? "",
+          approvalTxHash: payload.approvalTxHash ?? "",
+          amountUsdc,
+          sourceEvmAddress: payload.sourceEvmAddress ?? "",
+          solanaRecipientWallet: payload.solanaRecipientWallet ?? "",
+          solanaUsdcAta: payload.solanaUsdcAta ?? "",
+          isManualFeeFallback: Boolean(payload.isManualFeeFallback),
+          forwardingMaxFeeUsdc: payload.forwardingMaxFee?.usdc ?? "",
+          estimatedRecipientAmountUsdc: payload.estimatedRecipientAmount?.usdc ?? "",
+        });
+      }
 
       if (payload.burnTxHash) {
         const receipt: CctpExecutionReceipt = {

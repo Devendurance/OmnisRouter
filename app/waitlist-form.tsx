@@ -46,6 +46,12 @@ export function WaitlistForm() {
           message: data.message ?? "You’re on the waitlist.",
         });
         setEmail("");
+        if (typeof pendo !== "undefined") {
+          pendo.track("waitlist_signup_completed", {
+            status: "success",
+            is_duplicate: data.message?.toLowerCase().includes("already") ?? false,
+          });
+        }
       } catch {
         setState({
           status: "error",

@@ -28,6 +28,16 @@ function RulesForm({ rules, saveRules }: { rules: SpendingRules; saveRules: (rul
     event.preventDefault();
     saveRules(draftRules);
     setSaved(true);
+    if (typeof pendo !== "undefined") {
+      pendo.track("spending_rules_saved", {
+        maxTransferAmount: draftRules.maxTransferAmount,
+        dailyTransferLimit: draftRules.dailyTransferLimit,
+        approvalThreshold: draftRules.approvalThreshold,
+        gasCreditLimit: draftRules.gasCreditLimit,
+        allowedDestinationChains: draftRules.allowedDestinationChains.join(","),
+        emergencyPauseEnabled: draftRules.emergencyPauseEnabled,
+      });
+    }
   }
 
   return (
@@ -46,7 +56,7 @@ function RulesForm({ rules, saveRules }: { rules: SpendingRules; saveRules: (rul
               {chainOptions.map((chain) => (
                 <label className="toggle-row" key={chain}><input type="checkbox" checked={draftRules.allowedDestinationChains.includes(chain)} onChange={(event) => setDraftRules((current) => ({ ...current, allowedDestinationChains: event.target.checked ? [...current.allowedDestinationChains, chain] : current.allowedDestinationChains.filter((value) => value !== chain) }))} />Allow {chain}</label>
               ))}
-              <label className="toggle-row"><input type="checkbox" checked={draftRules.emergencyPauseEnabled} onChange={(event) => setDraftRules((current) => ({ ...current, emergencyPauseEnabled: event.target.checked }))} />Emergency pause enabled</label>
+              <label className="toggle-row"><input type="checkbox" checked={draftRules.emergencyPauseEnabled} onChange={(event) => { const checked = event.target.checked; setDraftRules((current) => ({ ...current, emergencyPauseEnabled: checked })); if (typeof pendo !== "undefined") { pendo.track("emergency_pause_toggled", { emergencyPauseEnabled: checked, previousState: !checked }); } }} />Emergency pause enabled</label>
             </div>
             <div className="button-row"><button className="primary-button" type="submit">Save rules</button></div>
           </form>

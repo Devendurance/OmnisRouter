@@ -203,6 +203,12 @@ export default function ReceiptPage() {
       const data = await response.json() as { ok: boolean; receipts: ReceiptRow[]; walletType?: string };
 
       setReceipts(data.receipts ?? []);
+      if (typeof pendo !== "undefined") {
+        pendo.track("receipts_loaded", {
+          receiptCount: (data.receipts ?? []).length,
+          walletType: data.walletType ?? "",
+        });
+      }
       return data;
     } catch {
       setReceipts([]);
@@ -279,6 +285,12 @@ export default function ReceiptPage() {
         throw new Error(verifyData.error || "Signature verification failed.");
       }
 
+      if (typeof pendo !== "undefined") {
+        pendo.track("wallet_auth_sign_in_completed", {
+          walletType,
+          walletAddress,
+        });
+      }
       setSignInState({ status: "idle" });
       await fetchSession();
       await loadReceipts();
@@ -288,7 +300,15 @@ export default function ReceiptPage() {
   }
 
   async function signOut() {
+    const prevWalletAddress = session?.walletAddress ?? "";
+    const prevWalletType = session?.walletType ?? "";
     await fetch("/api/auth/wallet/logout", { method: "POST" });
+    if (typeof pendo !== "undefined") {
+      pendo.track("wallet_auth_sign_out", {
+        walletAddress: prevWalletAddress,
+        walletType: prevWalletType,
+      });
+    }
     setSession({ authenticated: false });
     setReceipts([]);
   }

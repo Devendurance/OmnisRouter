@@ -361,6 +361,16 @@ export function RealCctpRoutePanel() {
 
       setPreparedBurnState({ status: "success", data: payload });
       toast.success("Route reviewed", { description: "Solana to Injective CCTP route ready." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("solana_burn_route_prepared", {
+          amountUsdc,
+          sourceSolanaAddress: connectedSolanaAddress,
+          injectiveRecipientAddress: intent.recipientAddress,
+          executionMode: payload.executionMode ?? "",
+          sponsorFeePayer: payload.sponsorFeePayer ?? "",
+          gasPaidBy: payload.gasPaidBy ?? "OmnisRouter",
+        });
+      }
     } catch (error) {
       const message = humanizeError(error, "Unable to review the route.");
 
@@ -385,6 +395,12 @@ export function RealCctpRoutePanel() {
       setRelayStage("idle");
       setWalletSignatureState({ status: "success", data: { message: "USDC authorized. Ready to send with OmnisRouter." } });
       toast.success("Wallet signed burn", { description: "Solana wallet authorized the USDC transaction." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("solana_burn_wallet_authorized", {
+          amountUsdc,
+          sourceSolanaAddress: connectedSolanaAddress,
+        });
+      }
     } catch (error) {
       setSignedBurnTransaction(null);
       const message = humanizeError(error, "Wallet signature test failed. No transaction was sent.");
@@ -420,6 +436,14 @@ export function RealCctpRoutePanel() {
       setCompleteRelayState({ status: "idle" });
       setRelayStage("burn-confirmed");
       toast.success("Burn confirmed", { description: "Solana burn submitted. Waiting for Circle Iris attestation." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("solana_burn_submitted", {
+          burnTxHash: payload.burnTxHash ?? "",
+          amountUsdc,
+          sourceSolanaAddress: connectedSolanaAddress,
+          injectiveRecipientAddress: intent.recipientAddress,
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Signed burn could not be submitted.";
 
@@ -455,6 +479,15 @@ export function RealCctpRoutePanel() {
         setRelayStage("receipt-saved");
         recordRealSponsoredExecution();
         toast.success("Relay completed", { description: "USDC minted on Injective via Circle CCTP." });
+        if (typeof pendo !== "undefined") {
+          pendo.track("injective_relay_completed", {
+            burnTxHash: payload.burnTxHash ?? "",
+            relayTxHash: payload.relayTxHash ?? "",
+            receiptId: payload.receiptId ?? "",
+            amountUsdc,
+            status: "completed",
+          });
+        }
       } else {
         setRelayStage("polling-iris");
       }
@@ -531,6 +564,16 @@ export function RealCctpRoutePanel() {
       setPreparedAuthorizationInputs(nextAuthorizationInputs);
       setPreparedAuthorizationState({ status: "success", data: payload });
       toast.success("Authorization prepared", { description: "Review and sign the USDC authorization from your Injective EVM wallet." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("usdc_authorization_prepared", {
+          amountUsdc,
+          sourceEvmAddress: payload.from ?? "",
+          solanaRecipientAddress,
+          relayerAddress: payload.relayerAddress ?? "",
+          authorizationType: payload.authorizationType ?? "",
+          domainSeparatorMatches: Boolean(payload.domainDebug?.domainSeparatorMatches),
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to prepare gasless authorization.";
 
@@ -597,6 +640,13 @@ export function RealCctpRoutePanel() {
         },
       });
       toast.success("Authorization signed", { description: "Your wallet signature was received. No transaction has been sent yet." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("usdc_authorization_signed", {
+          signingMethod: "eth_signTypedData_v4",
+          activeEvmAddress: activeAccount,
+          signatureLength: signature.length,
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sign authorization. No transaction was sent.";
 
@@ -638,6 +688,14 @@ export function RealCctpRoutePanel() {
 
       setVerifiedAuthorizationState({ status: "success", data: payload });
       toast.success("Authorization verified", { description: "The signature matches your source wallet." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("usdc_authorization_verified", {
+          authorizationValid: Boolean(payload.authorizationValid),
+          addressesMatch: Boolean(payload.addressesMatch),
+          hashesMatch: Boolean(payload.hashesMatch),
+          recoveredSigner: payload.recoveredSigner ?? "",
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to verify authorization. No transaction was sent.";
 
@@ -671,6 +729,16 @@ export function RealCctpRoutePanel() {
 
       setSubmittedAuthorizationState({ status: "success", data: payload });
       toast.success("Authorization submitted", { description: "OmnisRouter submitted your authorization and paid the Injective gas." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("usdc_authorization_submitted", {
+          authorizationTxHash: payload.authorizationTxHash ?? "",
+          sourceEvmAddress: payload.sourceEvmAddress ?? "",
+          relayerAddress: payload.relayerAddress ?? "",
+          amountUsdc: payload.amountUsdc ?? "",
+          authorizationConsumed: Boolean(payload.authorizationConsumed),
+          gasPaidBy: payload.gasPaidBy ?? "OmnisRouter",
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to submit authorization.";
 
@@ -714,6 +782,20 @@ export function RealCctpRoutePanel() {
       setForwardingStage("burn-submitted");
       setForwardingState({ status: "success", data: payload });
       toast.success("Burn submitted", { description: "USDC was burned on Injective. Circle Forwarding Service is handling Solana minting." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("cctp_burn_and_forward_completed", {
+          authorizationTxHash: payload.authorizationTxHash ?? "",
+          approvalTxHash: payload.approvalTxHash ?? "",
+          burnTxHash: payload.burnTxHash ?? "",
+          receiptId: payload.receiptId ?? "",
+          sourceEvmAddress: payload.sourceEvmAddress ?? "",
+          relayerAddress: payload.relayerAddress ?? "",
+          amountUsdc: payload.amountUsdc ?? "",
+          solanaRecipientAddress: payload.solanaRecipientAddress ?? "",
+          gasPaidBy: payload.gasPaidBy ?? "OmnisRouter",
+          forwardingStage: "burn-submitted",
+        });
+      }
 
       if (payload.receiptId) {
         toast.success("Receipt saved", { description: "Your wallet-scoped receipt is now available." });
@@ -750,6 +832,16 @@ export function RealCctpRoutePanel() {
 
       setPreflightInputs(currentInputs);
       setPreflightState({ status: "success", data: payload.preflight });
+      if (typeof pendo !== "undefined") {
+        pendo.track("cctp_route_check_completed", {
+          amountUsdc,
+          sourceChain: "Injective",
+          destinationChain: "Solana",
+          solanaRecipientAddress,
+          approvalNeeded: String(payload.preflight?.approvalNeeded ?? ""),
+          isManualFeeFallback: Boolean(payload.preflight?.isManualFeeFallback),
+        });
+      }
     } catch (error) {
       setPreflightInputs(null);
       const message = humanizeError(error, "Unable to complete route check.");
@@ -785,6 +877,19 @@ export function RealCctpRoutePanel() {
       setExecutionState({ status: "success", data: payload });
       recordRealSponsoredExecution();
       toast.success("Transfer executed", { description: "Circle Forwarding Service handles Solana minting." });
+      if (typeof pendo !== "undefined") {
+        pendo.track("server_funded_transfer_executed", {
+          burnTxHash: payload.burnTxHash ?? "",
+          approvalTxHash: payload.approvalTxHash ?? "",
+          amountUsdc,
+          sourceEvmAddress: payload.sourceEvmAddress ?? "",
+          solanaRecipientWallet: payload.solanaRecipientWallet ?? "",
+          solanaUsdcAta: payload.solanaUsdcAta ?? "",
+          isManualFeeFallback: Boolean(payload.isManualFeeFallback),
+          forwardingMaxFeeUsdc: payload.forwardingMaxFee?.usdc ?? "",
+          estimatedRecipientAmountUsdc: payload.estimatedRecipientAmount?.usdc ?? "",
+        });
+      }
 
       if (payload.burnTxHash) {
         const receipt: CctpExecutionReceipt = {

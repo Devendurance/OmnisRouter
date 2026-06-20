@@ -29,6 +29,25 @@ async function enterDemo(formData: FormData) {
     maxAge: 60 * 60 * 24 * 7,
   });
 
+  try {
+    await fetch("https://data.pendo.io/data/track", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-pendo-integration-key": "b56618b7-6614-453b-b8a6-f6015dfa36c4",
+      },
+      body: JSON.stringify({
+        type: "track",
+        event: "demo_access_granted",
+        visitorId: "system",
+        accountId: "system",
+        timestamp: Date.now(),
+      }),
+    });
+  } catch {
+    // tracking failure should not block the redirect
+  }
+
   redirect("/app");
 }
 

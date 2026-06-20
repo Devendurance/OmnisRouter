@@ -173,6 +173,13 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
     remainingGasCredits: gas.remaining,
     setCommand(command) {
       const intent = parsePaymentIntent(command);
+      if (typeof pendo !== "undefined") {
+        pendo.track("payment_intent_parsed", {
+          amount: intent.amount,
+          asset: intent.asset,
+          recipientAddress: intent.recipientAddress,
+        });
+      }
 
       setState((current) => ({
         ...current,
@@ -269,6 +276,14 @@ export function ProductStateProvider({ children }: { children: ReactNode }) {
       return execution;
     },
     recordRealSponsoredExecution() {
+      const newUsedToday = Math.min(state.gasCredits.usedToday + 1, DAILY_GAS_CREDIT_LIMIT);
+      if (typeof pendo !== "undefined") {
+        pendo.track("gas_credit_consumed", {
+          usedToday: newUsedToday,
+          remainingCredits: Math.max(DAILY_GAS_CREDIT_LIMIT - newUsedToday, 0),
+          dailyLimit: DAILY_GAS_CREDIT_LIMIT,
+        });
+      }
       setState((current) => ({
         ...current,
         gasCredits: withRemaining(Math.min(current.gasCredits.usedToday + 1, DAILY_GAS_CREDIT_LIMIT)),
