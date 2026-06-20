@@ -280,6 +280,17 @@ export default function ReceiptPage() {
       }
 
       setSignInState({ status: "idle" });
+
+      const now = Math.floor(Date.now() / 1000);
+      pendo.identify({
+        visitor: {
+          id: walletAddress,
+          walletType: walletType,
+          issuedAt: now,
+          expiresAt: now + 86400,
+        },
+      });
+
       await fetchSession();
       await loadReceipts();
     } catch (error) {
@@ -288,6 +299,7 @@ export default function ReceiptPage() {
   }
 
   async function signOut() {
+    pendo.clearSession();
     await fetch("/api/auth/wallet/logout", { method: "POST" });
     setSession({ authenticated: false });
     setReceipts([]);
